@@ -54,6 +54,10 @@ parser.add_argument('--noise_magnitude', type=float, default=0, help='Gaussian n
 parser.add_argument('--u_0', type=float, default=1e-4, help='Displacement scaling factor')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 
+parser.add_argument('--FEM_dataset', type=str, default='fem_solution_200_points.dat', help='Path to FEM data')
+parser.add_argument('--DIC_dataset', choices=['200fem_0_noise', '200fem_1_5_noise'], default='200fem_0_noise', help='Only for DIC measurements')
+parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
+
 args = parser.parse_args()
 
 # For strain measurements, extend loss weights
@@ -79,12 +83,12 @@ def side_load(y):
 params_factor = [dde.Variable(1 / s) for s in args.params_iter_speed]
 trainable_variables = params_factor
 
-# Define the domain geometry
-geom = dde.geometry.Rectangle([0, 0], [L_max, L_max])
-
 # =============================================================================
 # 4. PINN Implementation: Boundary Conditions and PDE Residual
 # =============================================================================
+# Define the domain geometry
+geom = dde.geometry.Rectangle([0, 0], [L_max, L_max])
+
 def HardBC(x, f, x_max=L_max):
     """
     Apply hard boundary conditions via transformation.
@@ -146,7 +150,7 @@ def strain_from_output(x, f):
 # 5. Load FEM Data and Build Interpolation Functions
 # =============================================================================
 dir_path = os.path.dirname(os.path.realpath(__file__))
-fem_file = os.path.join(dir_path, r"fem_data/fem_solution_200_points.dat")
+fem_file = os.path.join(dir_path, r"fem_data", args.FEM_dataset)
 data = np.loadtxt(fem_file)
 X_val      = data[:, :2]
 u_val      = data[:, 2:4]
@@ -202,8 +206,7 @@ elif args.measurments_type == "strain":
 
 elif args.measurments_type == "DIC":
     import pandas as pd
-    dic_dataset = "200fem_0_noise" if args.noise_magnitude == 0 else "200fem_1_5_noise"
-    dic_path = os.path.join(dir_path, f"dic_data/{dic_dataset}")
+    dic_path = os.path.join(dir_path, f"dic_data/{args.DIC_dataset}")
     X_dic = pd.read_csv(os.path.join(dic_path, "X_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_X_trans.csv"),
                         delimiter=";").dropna(axis=1).to_numpy()
     Y_dic = pd.read_csv(os.path.join(dic_path, "Y_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_Y_trans.csv"),
@@ -215,7 +218,11 @@ elif args.measurments_type == "DIC":
     x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
     y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
     X_DIC_input = [x_values, y_values]
+    
+    if args.n_measurments != x_values.shape[0] * y_values.shape[0]:
+        print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
     args.n_measurments = x_values.shape[0] * y_values.shape[0]
+
     measure_Ux = dde.PointSetOperatorBC(X_DIC_input, Ux_dic,
                                           lambda x, f, x_np: f[0][:, 0:1])
     measure_Uy = dde.PointSetOperatorBC(X_DIC_input, Uy_dic,
@@ -229,7 +236,7 @@ layers = [2] + [args.net_width] * args.net_depth + [5]
 net = dde.nn.SPINN(layers, args.activation, args.initialization, args.mlp)
 num_point_PDE = args.num_point_PDE
 batch_size = num_point_PDE + args.n_measurments
-num_params = sum(p.size for p in jax.tree_leaves(net.init(jax.random.PRNGKey(0), jnp.ones(layers[0]))))
+num_params = sum(p.size for p in jax.tree.leaves(net.init(jax.random.PRNGKey(0), jnp.ones(layers[0]))))
 num_test = 100000
 
 data = dde.data.PDE(
@@ -250,8 +257,8 @@ model.compile(args.optimizer, lr=args.lr, metrics=["l2 relative error"],
 # =============================================================================
 # 8. Setup Callbacks for Logging
 # =============================================================================
-results_path = os.path.join(dir_path, "results_inverse", args.measurments_type)
-folder_name = f"E-{E_init}_nu-{nu_init}_nDIC-{args.n_measurments}_noise-{args.noise_magnitude}_{args.available_time if args.available_time else args.n_iter}{'min' if args.available_time else 'iter'}"
+results_path = os.path.join(dir_path, args.results_path)
+folder_name = f"{args.measurments_type}_x{args.n_measurments}_noise-{args.noise_magnitude}_{args.available_time if args.available_time else args.n_iter}{'min' if args.available_time else 'iter'}"
 existing_folders = [f for f in os.listdir(results_path) if f.startswith(folder_name)]
 if existing_folders:
     suffixes = [int(f.split("-")[-1]) for f in existing_folders if f != folder_name]

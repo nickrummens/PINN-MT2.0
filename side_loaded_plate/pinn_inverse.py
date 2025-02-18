@@ -54,8 +54,8 @@ parser.add_argument('--noise_magnitude', type=float, default=0, help='Gaussian n
 parser.add_argument('--u_0', type=float, default=1e-4, help='Displacement scaling factor')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 
-parser.add_argument('--FEM_dataset', type=str, default='fem_solution_200_points.dat', help='Path to FEM data')
-parser.add_argument('--DIC_dataset', choices=['200fem_0_noise', '200fem_1_5_noise'], default='200fem_0_noise', help='Only for DIC measurements')
+parser.add_argument('--FEM_dataset', type=str, default='3mm_200points.dat', help='Path to FEM data')
+parser.add_argument('--DIC_dataset', choices=['3mm_0noise', '3mm_1_5noise'], default='3mm_0noise', help='Only for DIC measurements')
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
 
 args = parser.parse_args()
@@ -182,8 +182,9 @@ strain_fn   = create_interpolation_fn(strain_val)
 # =============================================================================
 # 6. Setup Measurement Data Based on Type (Displacement, Strain, DIC)
 # =============================================================================
-if args.measurments_type == "displacement":
-    X_DIC_input = [np.linspace(0, L_max, int(np.sqrt(args.n_measurments))).reshape(-1, 1)] * 2
+args.n_measurments = int(np.sqrt(args.n_measurments))**2
+if args.measurments_type == "displacement":    
+    X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
     DIC_data = solution_fn(X_DIC_input)[:, :2]
     DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
     measure_Ux = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1],
@@ -193,7 +194,7 @@ if args.measurments_type == "displacement":
     bcs = [measure_Ux, measure_Uy]
 
 elif args.measurments_type == "strain":
-    X_DIC_input = [np.linspace(0, L_max, int(np.sqrt(args.n_measurments))).reshape(-1, 1)] * 2
+    X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
     DIC_data = strain_fn(X_DIC_input)
     DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
     measure_Exx = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1],
@@ -258,7 +259,7 @@ model.compile(args.optimizer, lr=args.lr, metrics=["l2 relative error"],
 # 8. Setup Callbacks for Logging
 # =============================================================================
 results_path = os.path.join(dir_path, args.results_path)
-folder_name = f"{args.measurments_type}_x{args.n_measurments}_noise-{args.noise_magnitude}_{args.available_time if args.available_time else args.n_iter}{'min' if args.available_time else 'iter'}"
+folder_name = f"{args.measurments_type}_x{args.n_measurments}_{args.noise_magnitude}noise_{args.available_time if args.available_time else args.n_iter}{'min' if args.available_time else 'iter'}"
 existing_folders = [f for f in os.listdir(results_path) if f.startswith(folder_name)]
 if existing_folders:
     suffixes = [int(f.split("-")[-1]) for f in existing_folders if f != folder_name]
@@ -285,13 +286,36 @@ for i, field in enumerate(args.log_output_fields): # Log output fields
     )
 
 # =============================================================================
-# 9. Training and Configuration Logging
+# 9. Training
 # =============================================================================
 start_time = time.time()
 print(f"E: {E_init * params_factor[0].value * args.params_iter_speed[0]:.3f}, nu: {nu_init * params_factor[1].value * args.params_iter_speed[1]:.3f}")
 losshistory, train_state = model.train(iterations=args.n_iter, callbacks=callbacks, display_every=args.log_every)
-print(f"E: {E_init * params_factor[0].value * args.params_iter_speed[0]:.3f}, nu: {nu_init * params_factor[1].value * args.params_iter_speed[1]:.3f}")
 elapsed = time.time() - start_time
+
+# =============================================================================
+# 10. Logging
+# =============================================================================
+dde.utils.save_loss_history(losshistory, os.path.join(new_folder_path, "loss_history.dat"))
+
+params_init = [E_init, nu_init]
+variables_history_path = os.path.join(new_folder_path, "variables_history.dat")
+
+# Read the variables history
+with open(variables_history_path, "r") as f:
+    lines = f.readlines()
+
+# Update the variables history with scaled values
+with open(variables_history_path, "w") as f:
+    for line in lines:
+        step, value = line.strip().split(' ', 1)
+        values = [scale * init * val for scale, init, val in zip(args.params_iter_speed, params_init, eval(value))]
+        f.write(f"{step} " + dde.utils.list_to_str(values, precision=3) + "\n")
+
+# Final E and nu values as the average of the last 10 values 
+E_final = np.mean([eval(line.strip().split(' ', 1)[1])[0] for line in lines[-10:]])
+nu_final = np.mean([eval(line.strip().split(' ', 1)[1])[1] for line in lines[-10:]])
+print(f"Final E: {E_final:.3f}, nu: {nu_final:.3f}")
 
 def log_config(fname):
     """
@@ -314,26 +338,28 @@ def log_config(fname):
         "backend": dde.backend.backend_name,
     }
     network_info = {
-        "batch_size": batch_size,
+        "net_width": args.net_width,
+        "net_depth": args.net_depth,
         "num_params": num_params,
         "activation": args.activation,
-        "initializer": args.initialization,
+        "mlp_type": args.mlp,
         "optimizer": args.optimizer,
-        "mlp": args.mlp,
-        "logged_fields": args.log_output_fields,
+        "initializer": args.initialization,
+        "batch_size": batch_size,
         "lr": args.lr,
+        "loss_weights": args.loss_weights,
+        "params_iter_speed": args.params_iter_speed,
+        "u_0": args.u_0,
+        "logged_fields": args.log_output_fields,
     }
     problem_info = {
+        "L_max": L_max,
         "E_actual": E_actual,
         "nu_actual": nu_actual,
         "E_init": E_init,
         "nu_init": nu_init,
-        "E_final": float(E_init * params_factor[0].value * args.params_iter_speed[0]),
-        "nu_final": float(nu_init * params_factor[1].value * args.params_iter_speed[1]),
-        "params_iter_speed": args.params_iter_speed,
-        "loss_weights": args.loss_weights,
-        "L_max": L_max,
-        "u_0": args.u_0,
+        "E_final": E_final,
+        "nu_final": nu_final,
     }
     data_info = {
         "n_measurments": (int(np.sqrt(args.n_measurments)))**2,
@@ -346,16 +372,3 @@ def log_config(fname):
         json.dump(info, f, indent=4)
 
 log_config(os.path.join(new_folder_path, "config.json"))
-dde.utils.save_loss_history(losshistory, os.path.join(new_folder_path, "loss_history.dat"))
-
-# =============================================================================
-# 10. Post-Processing: Adjust and Save Trainable Variable History
-# =============================================================================
-params_init = [E_init, nu_init]
-with open(os.path.join(new_folder_path, "variables_history.dat"), "r") as f:
-    lines = f.readlines()
-with open(os.path.join(new_folder_path, "variables_history.dat"), "w") as f:
-    for line in lines:
-        step, value = line.strip().split(' ', 1)
-        values = [scale * init * val for scale, init, val in zip(args.params_iter_speed, params_init, eval(value))]
-        f.write(f"{step} " + dde.utils.list_to_str(values, precision=3) + "\n")

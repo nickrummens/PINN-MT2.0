@@ -38,8 +38,10 @@ parser.add_argument('--log_every', type=int, default=1000, help='Log every n ste
 parser.add_argument('--available_time', type=int, default=2, help='Available time in minutes')
 parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
-parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1e8,1e8], help='Loss weights (more on DIC points)')
+parser.add_argument('--loss_fn', nargs='+', default=['MSE']*5+["mean l2 relative error"], help='Loss functions')
+parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1e3,1e3], help='Loss weights (more on DIC points)')
 parser.add_argument('--num_point_PDE', type=int, default=10000, help='Number of collocation points for PDE evaluation')
+parser.add_argument('--num_point_test', type=int, default=100000, help='Number of test points')
 
 parser.add_argument('--net_width', type=int, default=32, help='Width of the network')
 parser.add_argument('--net_depth', type=int, default=5, help='Depth of the network')
@@ -51,7 +53,7 @@ parser.add_argument('--initialization', choices=['Glorot uniform', 'He normal'],
 parser.add_argument('--measurments_type', choices=['displacement','strain','DIC'], default='strain', help='Type of measurements')
 parser.add_argument('--n_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
 parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude')
-parser.add_argument('--u_0', type=float, default=1e-4, help='Displacement scaling factor')
+parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 
 parser.add_argument('--FEM_dataset', type=str, default='3mm_200points.dat', help='Path to FEM data')
@@ -65,6 +67,7 @@ if len(args.log_output_fields[0]) == 0:
 
 # For strain measurements, extend loss weights
 if args.measurments_type == "strain":
+    args.loss_fn.append(args.loss_fn[-1])
     args.loss_weights.append(args.loss_weights[-1])
 
 dde.config.set_default_autodiff("forward")
@@ -87,7 +90,108 @@ params_factor = [dde.Variable(1 / s) for s in args.params_iter_speed]
 trainable_variables = params_factor
 
 # =============================================================================
-# 4. PINN Implementation: Boundary Conditions and PDE Residual
+# 4. Load FEM Data and Build Interpolation Functions
+# =============================================================================
+dir_path = os.path.dirname(os.path.realpath(__file__))
+fem_file = os.path.join(dir_path, r"fem_data", args.FEM_dataset)
+data = np.loadtxt(fem_file)
+X_val      = data[:, :2]
+u_val      = data[:, 2:4]
+strain_val = data[:, 4:7]
+stress_val = data[:, 7:10]
+solution_val = np.hstack((u_val, stress_val))
+
+n_mesh_points = int(np.sqrt(X_val.shape[0]))
+x_grid = np.linspace(0, L_max, n_mesh_points)
+y_grid = np.linspace(0, L_max, n_mesh_points)
+
+def create_interpolation_fn(data_array):
+    num_components = data_array.shape[1]
+    interpolators = []
+    for i in range(num_components):
+        interp = RegularGridInterpolator(
+            (x_grid, y_grid),
+            data_array[:, i].reshape(n_mesh_points, n_mesh_points).T
+        )
+        interpolators.append(interp)
+    def interpolation_fn(x):
+        x_in = transform_coords([x[0], x[1]])
+        return np.array([interp((x_in[:, 0], x_in[:, 1])) for interp in interpolators]).T
+    return interpolation_fn
+
+solution_fn = create_interpolation_fn(solution_val)
+strain_fn   = create_interpolation_fn(strain_val)
+
+# =============================================================================
+# 5. Setup Measurement Data Based on Type (Displacement, Strain, DIC)
+# =============================================================================
+args.n_measurments = int(np.sqrt(args.n_measurments))**2
+if args.measurments_type == "displacement":    
+    X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
+    DIC_data = solution_fn(X_DIC_input)[:, :2]
+    DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
+    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1],
+                                          lambda x, f, x_np: f[0][:, 0:1])
+    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2],
+                                          lambda x, f, x_np: f[0][:, 1:2])
+    bcs = [measure_Ux, measure_Uy]
+
+elif args.measurments_type == "strain":
+    def strain_from_output(x, f):
+        """
+        Compute strain components from the network output for strain measurements.
+        """
+        x = transform_coords(x)
+        E_xx = dde.grad.jacobian(f, x, i=0, j=0)[0]
+        E_yy = dde.grad.jacobian(f, x, i=1, j=1)[0]
+        E_xy = 0.5 * (dde.grad.jacobian(f, x, i=0, j=1)[0] + dde.grad.jacobian(f, x, i=1, j=0)[0])
+        return jnp.hstack([E_xx, E_yy, E_xy])
+
+    X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
+    DIC_data = strain_fn(X_DIC_input)
+    DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
+    measure_Exx = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1],
+                                           lambda x, f, x_np: strain_from_output(x, f)[:, 0:1])
+    measure_Eyy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2],
+                                           lambda x, f, x_np: strain_from_output(x, f)[:, 1:2])
+    measure_Exy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 2:3],
+                                           lambda x, f, x_np: strain_from_output(x, f)[:, 2:3])
+    bcs = [measure_Exx, measure_Eyy, measure_Exy]
+
+elif args.measurments_type == "DIC":
+    import pandas as pd
+    dic_path = os.path.join(dir_path, f"dic_data/{args.DIC_dataset}")
+    X_dic = pd.read_csv(os.path.join(dic_path, "X_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_X_trans.csv"),
+                        delimiter=";").dropna(axis=1).to_numpy()
+    Y_dic = pd.read_csv(os.path.join(dic_path, "Y_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_Y_trans.csv"),
+                        delimiter=";").dropna(axis=1).to_numpy()
+    Ux_dic = pd.read_csv(os.path.join(dic_path, "U_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_U_trans.csv"),
+                         delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+    Uy_dic = pd.read_csv(os.path.join(dic_path, "V_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_V_trans.csv"),
+                         delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+    x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
+    y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
+    X_DIC_input = [x_values, y_values]
+    
+    if args.n_measurments != x_values.shape[0] * y_values.shape[0]:
+        print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
+    args.n_measurments = x_values.shape[0] * y_values.shape[0]
+
+    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, Ux_dic,
+                                          lambda x, f, x_np: f[0][:, 0:1])
+    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, Uy_dic,
+                                          lambda x, f, x_np: f[0][:, 1:2])
+    bcs = [measure_Ux, measure_Uy]
+
+# Use measurements norm as the default scaling factor
+if args.measurments_type == "DIC":
+    DIC_norms = np.linalg.norm(np.hstack([Ux_dic, Uy_dic]), axis=0)
+else:
+    DIC_norms = np.linalg.norm(solution_fn(X_DIC_input)[:, :2], axis=0)
+args.u_0 = [DIC_norms[i] if not args.u_0[i] else args.u_0[i] for i in range(2)]
+
+# =============================================================================
+# 6. PINN Implementation: Boundary Conditions and PDE Residual
 # =============================================================================
 # Define the domain geometry
 geom = dde.geometry.Rectangle([0, 0], [L_max, L_max])
@@ -99,8 +203,8 @@ def HardBC(x, f, x_max=L_max):
     """
     if isinstance(x, list):
         x = transform_coords(x)
-    Ux  = f[:, 0] * x[:, 0] * args.u_0 
-    Uy  = f[:, 1] * x[:, 1] * args.u_0
+    Ux  = f[:, 0] * x[:, 0] * args.u_0[0] 
+    Uy  = f[:, 1] * x[:, 1] * args.u_0[1]
     Sxx = f[:, 2] * (x_max - x[:, 0]) + side_load(x[:, 1])
     Syy = f[:, 3] * (x_max - x[:, 1])
     Sxy = f[:, 4] * x[:, 0] * (x_max - x[:, 0]) * x[:, 1] * (x_max - x[:, 1])
@@ -138,100 +242,6 @@ def pde(x, f, unknowns=params_factor):
     stress_y  = S_yy - f_internal[:, 3:4]
     stress_xy = S_xy - f_internal[:, 4:5]
     return [momentum_x, momentum_y, stress_x, stress_y, stress_xy]
-
-def strain_from_output(x, f):
-    """
-    Compute strain components from the network output for strain measurements.
-    """
-    x = transform_coords(x)
-    E_xx = dde.grad.jacobian(f, x, i=0, j=0)[0]
-    E_yy = dde.grad.jacobian(f, x, i=1, j=1)[0]
-    E_xy = 0.5 * (dde.grad.jacobian(f, x, i=0, j=1)[0] + dde.grad.jacobian(f, x, i=1, j=0)[0])
-    return jnp.hstack([E_xx, E_yy, E_xy])
-
-# =============================================================================
-# 5. Load FEM Data and Build Interpolation Functions
-# =============================================================================
-dir_path = os.path.dirname(os.path.realpath(__file__))
-fem_file = os.path.join(dir_path, r"fem_data", args.FEM_dataset)
-data = np.loadtxt(fem_file)
-X_val      = data[:, :2]
-u_val      = data[:, 2:4]
-strain_val = data[:, 4:7]
-stress_val = data[:, 7:10]
-solution_val = np.hstack((u_val, stress_val))
-
-n_mesh_points = int(np.sqrt(X_val.shape[0]))
-x_grid = np.linspace(0, L_max, n_mesh_points)
-y_grid = np.linspace(0, L_max, n_mesh_points)
-
-def create_interpolation_fn(data_array):
-    num_components = data_array.shape[1]
-    interpolators = []
-    for i in range(num_components):
-        interp = RegularGridInterpolator(
-            (x_grid, y_grid),
-            data_array[:, i].reshape(n_mesh_points, n_mesh_points).T
-        )
-        interpolators.append(interp)
-    def interpolation_fn(x):
-        x_in = transform_coords([x[0], x[1]])
-        return np.array([interp((x_in[:, 0], x_in[:, 1])) for interp in interpolators]).T
-    return interpolation_fn
-
-solution_fn = create_interpolation_fn(solution_val)
-strain_fn   = create_interpolation_fn(strain_val)
-
-# =============================================================================
-# 6. Setup Measurement Data Based on Type (Displacement, Strain, DIC)
-# =============================================================================
-args.n_measurments = int(np.sqrt(args.n_measurments))**2
-if args.measurments_type == "displacement":    
-    X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
-    DIC_data = solution_fn(X_DIC_input)[:, :2]
-    DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1],
-                                          lambda x, f, x_np: f[0][:, 0:1])
-    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2],
-                                          lambda x, f, x_np: f[0][:, 1:2])
-    bcs = [measure_Ux, measure_Uy]
-
-elif args.measurments_type == "strain":
-    X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
-    DIC_data = strain_fn(X_DIC_input)
-    DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-    measure_Exx = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1],
-                                           lambda x, f, x_np: strain_from_output(x, f)[:, 0:1])
-    measure_Eyy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2],
-                                           lambda x, f, x_np: strain_from_output(x, f)[:, 1:2])
-    measure_Exy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 2:3],
-                                           lambda x, f, x_np: strain_from_output(x, f)[:, 2:3])
-    bcs = [measure_Exx, measure_Eyy, measure_Exy]
-
-elif args.measurments_type == "DIC":
-    import pandas as pd
-    dic_path = os.path.join(dir_path, f"dic_data/{args.DIC_dataset}")
-    X_dic = pd.read_csv(os.path.join(dic_path, "X_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_X_trans.csv"),
-                        delimiter=";").dropna(axis=1).to_numpy()
-    Y_dic = pd.read_csv(os.path.join(dic_path, "Y_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_Y_trans.csv"),
-                        delimiter=";").dropna(axis=1).to_numpy()
-    Ux_dic = pd.read_csv(os.path.join(dic_path, "U_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_U_trans.csv"),
-                         delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-    Uy_dic = pd.read_csv(os.path.join(dic_path, "V_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_V_trans.csv"),
-                         delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-    x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
-    y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
-    X_DIC_input = [x_values, y_values]
-    
-    if args.n_measurments != x_values.shape[0] * y_values.shape[0]:
-        print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
-    args.n_measurments = x_values.shape[0] * y_values.shape[0]
-
-    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, Ux_dic,
-                                          lambda x, f, x_np: f[0][:, 0:1])
-    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, Uy_dic,
-                                          lambda x, f, x_np: f[0][:, 1:2])
-    bcs = [measure_Ux, measure_Uy]
 
 # =============================================================================
 # 7. Define Neural Network, Data, and Model

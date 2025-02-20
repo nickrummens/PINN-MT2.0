@@ -36,7 +36,7 @@ parser = argparse.ArgumentParser(description="Physics Informed Neural Networks f
 parser.add_argument('--n_iter', type=int, default=int(1e10), help='Number of iterations')
 parser.add_argument('--log_every', type=int, default=1000, help='Log every n steps')
 parser.add_argument('--available_time', type=int, default=2, help='Available time in minutes')
-parser.add_argument('--log_output_fields', nargs='+', default=['Ux', 'Uy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
+parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1e8,1e8], help='Loss weights (more on DIC points)')
 parser.add_argument('--num_point_PDE', type=int, default=10000, help='Number of collocation points for PDE evaluation')
@@ -48,9 +48,9 @@ parser.add_argument('--optimizer', choices=['adam'], default='adam', help='Optim
 parser.add_argument('--mlp', choices=['mlp', 'modified_mlp'], default='mlp', help='Type of MLP for SPINN')
 parser.add_argument('--initialization', choices=['Glorot uniform', 'He normal'], default='Glorot uniform', help='Initialization method')
 
-parser.add_argument('--measurments_type', choices=['displacement','strain','DIC'], default='DIC', help='Type of measurements')
+parser.add_argument('--measurments_type', choices=['displacement','strain','DIC'], default='strain', help='Type of measurements')
 parser.add_argument('--n_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
-parser.add_argument('--noise_magnitude', type=float, default=0, help='Gaussian noise magnitude')
+parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude')
 parser.add_argument('--u_0', type=float, default=1e-4, help='Displacement scaling factor')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 
@@ -59,6 +59,9 @@ parser.add_argument('--DIC_dataset', choices=['3mm_0noise', '3mm_1_5noise'], def
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
 
 args = parser.parse_args()
+
+if len(args.log_output_fields[0]) == 0:
+    args.log_output_fields = [] # Empty list for no logging
 
 # For strain measurements, extend loss weights
 if args.measurments_type == "strain":
@@ -273,7 +276,7 @@ if args.available_time:
     callbacks.append(dde.callbacks.Timer(args.available_time))
 callbacks.append(dde.callbacks.VariableValue(params_factor, period=args.log_every,
                                                filename=os.path.join(new_folder_path, "variables_history.dat"),
-                                               precision=10))
+                                               precision=8))
 X_plot = [np.linspace(0, L_max, 100).reshape(-1, 1)] * 2
 for i, field in enumerate(args.log_output_fields): # Log output fields
     callbacks.append(
@@ -281,7 +284,8 @@ for i, field in enumerate(args.log_output_fields): # Log output fields
             X_plot,
             lambda x, output, i=i: output[0][:, i],
             period=args.log_every,
-            filename=os.path.join(new_folder_path, f"{field}_history.dat")
+            filename=os.path.join(new_folder_path, f"{field}_history.dat"),
+            precision=6
         )
     )
 
@@ -310,8 +314,11 @@ with open(variables_history_path, "w") as f:
     for line in lines:
         step, value = line.strip().split(' ', 1)
         values = [scale * init * val for scale, init, val in zip(args.params_iter_speed, params_init, eval(value))]
-        f.write(f"{step} " + dde.utils.list_to_str(values, precision=3) + "\n")
+        f.write(f"{step} " + dde.utils.list_to_str(values, precision=8) + "\n")
 
+# Read the variables history
+with open(variables_history_path, "r") as f:
+    lines = f.readlines()
 # Final E and nu values as the average of the last 10 values 
 E_final = np.mean([eval(line.strip().split(' ', 1)[1])[0] for line in lines[-10:]])
 nu_final = np.mean([eval(line.strip().split(' ', 1)[1])[1] for line in lines[-10:]])

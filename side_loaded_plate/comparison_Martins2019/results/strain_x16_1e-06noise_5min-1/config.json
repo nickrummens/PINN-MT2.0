@@ -1,0 +1,57 @@
+{
+    "system": {
+        "OS": "Linux",
+        "Release": "5.15.167.4-microsoft-standard-WSL2"
+    },
+    "gpu": {
+        "GPU": "NVIDIA GeForce RTX 4080 SUPER",
+        "Total GPU Memory": "15.99 GB"
+    },
+    "execution": {
+        "n_iter": 67151,
+        "elapsed": 306.21092653274536,
+        "iter_per_sec": 219.2965507807216,
+        "backend": "jax"
+    },
+    "network": {
+        "net_width": 32,
+        "net_depth": 5,
+        "num_params": 17024,
+        "activation": "tanh",
+        "mlp_type": "mlp",
+        "optimizer": "adam",
+        "initializer": "Glorot uniform",
+        "batch_size": 10016,
+        "lr": 0.001,
+        "loss_weights": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            100000000.0,
+            100000000.0,
+            100000000.0
+        ],
+        "params_iter_speed": [
+            1,
+            1
+        ],
+        "u_0": 0.0001,
+        "logged_fields": []
+    },
+    "problem": {
+        "L_max": 3.0,
+        "E_actual": 210000.0,
+        "nu_actual": 0.3,
+        "E_init": 100000.0,
+        "nu_init": 0.2,
+        "E_final": 209620.0,
+        "nu_final": 0.2954899999999999
+    },
+    "data": {
+        "n_measurments": 16,
+        "noise_magnitude": 1e-06,
+        "measurments_type": "strain"
+    }
+}

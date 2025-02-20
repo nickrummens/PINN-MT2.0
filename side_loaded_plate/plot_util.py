@@ -277,27 +277,27 @@ def plot_field_columns(fig, ax, fields, fields_id, iteration, Xmesh, Ymesh, func
 
     for i, field_id in enumerate(fields_id):
         # --- Exact solution plot (top row) ---
-        ax_exact = ax[0][i+1]
+        ax_exact = ax[0][i]
         im_ref = plot_field(iteration, fields, field_id, Xmesh, Ymesh, func, ax_exact,
                             field_names, plot_exact=True, colormap=colormap)
         ims_ref.append(im_ref)
         
         # Manually add a colorbar for the exact field
         pos = ax_exact.get_position()
-        cax_pos = mtransforms.Bbox.from_bounds(pos.x0 + pos.width*0.05, pos.y1 + 0.03,
+        cax_pos = mtransforms.Bbox.from_bounds(pos.x0 + pos.width*0.05, pos.y1 + 0.04,
                                                pos.width*0.9, 0.01)
         cax = fig.add_axes(cax_pos)
         cbfield = fig.colorbar(im_ref, cax=cax, orientation='horizontal', format=make_formatter())
         cbfield.ax.xaxis.set_ticks_position('top')
         
         # --- Computed field plot (middle row) ---
-        ax_field = ax[1][i+1]
+        ax_field = ax[1][i]
         im_field = plot_field(iteration, fields, field_id, Xmesh, Ymesh, func, ax_field,
                               field_names, plot_exact=False, colormap=colormap)
         ims_field.append(im_field)
         
         # --- Residual plot (bottom row) ---
-        ax_res = ax[2][i+1]
+        ax_res = ax[2][i]
         im_res = plot_field_residual(iteration, fields, field_id, Xmesh, Ymesh, func, ax_res)
         ims_res.append(im_res)
         pos = ax_res.get_position()

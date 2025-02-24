@@ -41,7 +41,7 @@ def init_metrics(ax, steps, metrics, metrics_names, step_type="iteration", time_
         line, = ax.plot([], [], zorder=3, color=colors_list[idx], label=metrics_names[idx])
         lines.append(line)
         scatters.append(ax.scatter([], [], c='k', zorder=4))
-    ax.legend()
+    ax.legend(handlelength=1)
     ax.set_xlabel(f"Time ({time_unit})" if step_type=="time" else "Iterations")
     return lines, scatters
 
@@ -84,14 +84,14 @@ def init_variables(axs, steps, param1_actual, param2_actual, param1_history, par
     """
     axs[0].hlines(y=param1_actual, xmin=0, xmax=np.max(steps), linestyles='-.', colors="b")
     axs[1].hlines(y=param2_actual, xmin=0, xmax=np.max(steps), linestyles='-.', colors="r")
-    line_param1, = axs[0].plot([], [], color='b', zorder=3,
-                                 label=f"{param1_name}={param1_history[0]:.3f} → {param1_actual:.3f}")
-    line_param2, = axs[1].plot([], [], color='r', zorder=3,
-                                 label=f"{param2_name}={param2_history[0]:.3f} | {param2_actual:.3f}")
+    line_param1, = axs[0].plot([], [], color='b', zorder=3)
+    line_param2, = axs[1].plot([], [], color='r', zorder=3)
     axs[0].plot(steps, param1_history, color='b', alpha=0.2)
     axs[1].plot(steps, param2_history, color='r', alpha=0.2)
-    scatter_param1 = axs[0].scatter([], [], c='k', zorder=4)
-    scatter_param2 = axs[1].scatter([], [], c='k', zorder=4)
+    scatter_param1 = axs[0].scatter([], [], c='k', zorder=4,
+                                 label=f"{param2_name} = {param2_history[0]:.3f}")#|{param2_actual:.3f}")
+    scatter_param2 = axs[1].scatter([], [], c='k', zorder=4,
+                                 label=f"{param2_name} = {param2_history[0]:.3f}")#|{param2_actual:.3f}")
     axs[0].legend()
     axs[1].legend()
     return line_param1, line_param2, scatter_param1, scatter_param2, axs
@@ -118,12 +118,13 @@ def update_variables(iteration, line_param1, line_param2, scatter_param1, scatte
         Updated line and scatter objects and axes.
     """
     line_param1.set_data(steps[:iteration+1], param1_history[:iteration+1])
-    line_param1.set_label(f"{param1_name}={param1_history[iteration]:.1f} | {param1_actual:.1f}")
     scatter_param1.set_offsets([steps[iteration], param1_history[iteration]])
+    scatter_param1.set_label(f"{param1_name} = {param1_history[iteration]:.1f}")# | {param1_actual:.1f}")
     
     line_param2.set_data(steps[:iteration+1], param2_history[:iteration+1])
-    line_param2.set_label(f"{param2_name}={param2_history[iteration]:.3f} | {param2_actual:.3f}")
     scatter_param2.set_offsets([steps[iteration], param2_history[iteration]])
+    scatter_param2.set_label(f"{param2_name} = {param2_history[iteration]:.3f}")# | {param2_actual:.3f}")
+
     
     axs[0].legend()
     axs[1].legend()
@@ -148,7 +149,7 @@ def pcolor_plot(ax, X, Y, C, title, colormap="viridis", norm=None):
     im = ax.pcolor(X, Y, C, cmap=colormap, shading='auto', norm=norm)
     ax.axis("equal")
     ax.axis("off")
-    ax.set_title(title, fontsize=14)
+    ax.set_title(title)
     return im
 
 def plot_field(i, fields, field_id, Xmesh, Ymesh, func, ax, field_names, plot_exact=False, colormap="viridis"):
@@ -175,7 +176,7 @@ def plot_field(i, fields, field_id, Xmesh, Ymesh, func, ax, field_names, plot_ex
     im = pcolor_plot(ax, Xmesh, Ymesh, field_exact if plot_exact else field, title, colormap=colormap, norm=field_norm)
     return im
 
-def plot_field_residual(i, fields, field_id, Xmesh, Ymesh, func, ax, colormap="coolwarm", ngrid=100):
+def plot_field_residual(i, fields, field_id, Xmesh, Ymesh, func, ax, field_names, colormap="coolwarm", ngrid=100):
     """
     Plot the residual (difference between computed and exact field) on the given axis.
     
@@ -195,7 +196,8 @@ def plot_field_residual(i, fields, field_id, Xmesh, Ymesh, func, ax, colormap="c
     field_exact = func(np.hstack((Xmesh.reshape(-1, 1), Ymesh.reshape(-1, 1))))[:, field_id].reshape(Xmesh.shape)
     field_diff = np.array(fields[field_id][i]).reshape(Xmesh.shape) - field_exact
     norm = colors.Normalize(vmin=field_diff.min(), vmax=field_diff.max())
-    im = pcolor_plot(ax, Xmesh, Ymesh, field_diff, "Residual", colormap=colormap, norm=norm)
+    title = f"{field_names[field_id]} - {field_names[field_id]}*"
+    im = pcolor_plot(ax, Xmesh, Ymesh, field_diff, title, colormap=colormap, norm=norm)
     return im
 
 def set_normdiff(i, fields, fields_id, func, Xmesh, Ymesh, ngrid=100):
@@ -298,7 +300,7 @@ def plot_field_columns(fig, ax, fields, fields_id, iteration, Xmesh, Ymesh, func
         
         # --- Residual plot (bottom row) ---
         ax_res = ax[2][i]
-        im_res = plot_field_residual(iteration, fields, field_id, Xmesh, Ymesh, func, ax_res)
+        im_res = plot_field_residual(iteration, fields, field_id, Xmesh, Ymesh, func, ax_res, field_names)
         ims_res.append(im_res)
         pos = ax_res.get_position()
         cax_pos = mtransforms.Bbox.from_bounds(pos.x0 + pos.width*0.05, pos.y0 - 0.03,

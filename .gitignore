@@ -1,5 +1,4 @@
 *.dat
 !side_loaded_plate/fem_data/fem_solution_200_points.dat
-
-
+side_loaded_plate/dic_data/*
 

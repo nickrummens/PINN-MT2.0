@@ -34,12 +34,12 @@ def transform_coords(x):
 # =============================================================================
 parser = argparse.ArgumentParser(description="Physics Informed Neural Networks for Linear Elastic Plate")
 parser.add_argument('--n_iter', type=int, default=int(1e10), help='Number of iterations')
-parser.add_argument('--log_every', type=int, default=1000, help='Log every n steps')
+parser.add_argument('--log_every', type=int, default=250, help='Log every n steps')
 parser.add_argument('--available_time', type=int, default=2, help='Available time in minutes')
 parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
-parser.add_argument('--loss_fn', nargs='+', default=['MSE']*5+["mean l2 relative error"], help='Loss functions')
-parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1e3,1e3], help='Loss weights (more on DIC points)')
+parser.add_argument('--loss_fn', nargs='+', default='MSE', help='Loss functions')
+parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1,1], help='Loss weights (more on DIC points)')
 parser.add_argument('--num_point_PDE', type=int, default=10000, help='Number of collocation points for PDE evaluation')
 parser.add_argument('--num_point_test', type=int, default=100000, help='Number of test points')
 
@@ -56,8 +56,8 @@ parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussia
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 
-parser.add_argument('--FEM_dataset', type=str, default='3mm_200points.dat', help='Path to FEM data')
-parser.add_argument('--DIC_dataset', choices=['3mm_0noise', '3mm_1_5noise'], default='3mm_0noise', help='Only for DIC measurements')
+parser.add_argument('--FEM_dataset', type=str, default='3x3mm.dat', help='Path to FEM data')
+parser.add_argument('--DIC_dataset', type=str, default='3mm_0noise', help='Only for DIC measurements type')
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
 
 args = parser.parse_args()
@@ -67,7 +67,6 @@ if len(args.log_output_fields[0]) == 0:
 
 # For strain measurements, extend loss weights
 if args.measurments_type == "strain":
-    args.loss_fn.append(args.loss_fn[-1])
     args.loss_weights.append(args.loss_weights[-1])
 
 dde.config.set_default_autodiff("forward")
@@ -75,12 +74,13 @@ dde.config.set_default_autodiff("forward")
 # =============================================================================
 # 3. Global Constants, Geometry, and Material Parameters
 # =============================================================================
-L_max     = 3.0
-E_actual  = 210e3   # Actual Young's modulus
+# /!\ Distances are in mm, forces in N, Young's modulus in N/mm^2
+L_max     = 3.0 # Plate width in mm
+E_actual  = 210e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
 nu_actual = 0.3     # Actual Poisson's ratio
 E_init    = 100e3   # Initial guess for Young's modulus
 nu_init   = 0.2     # Initial guess for Poisson's ratio
-m, b = 10, 50  # Side-load parameters
+m, b = 10, 50  # Side-load parameters 10 N/mm, 50 N
 
 def side_load(y):
     return m * y + b
@@ -111,7 +111,7 @@ def create_interpolation_fn(data_array):
     for i in range(num_components):
         interp = RegularGridInterpolator(
             (x_grid, y_grid),
-            data_array[:, i].reshape(n_mesh_points, n_mesh_points).T
+            data_array[:, i].reshape(n_mesh_points, n_mesh_points).T,
         )
         interpolators.append(interp)
     def interpolation_fn(x):
@@ -130,10 +130,11 @@ if args.measurments_type == "displacement":
     X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
     DIC_data = solution_fn(X_DIC_input)[:, :2]
     DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1],
-                                          lambda x, f, x_np: f[0][:, 0:1])
-    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2],
-                                          lambda x, f, x_np: f[0][:, 1:2])
+    DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
+    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1]/DIC_norms[0],
+                                          lambda x, f, x_np: f[0][:, 0:1]/DIC_norms[0])
+    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2]/DIC_norms[1],
+                                          lambda x, f, x_np: f[0][:, 1:2]/DIC_norms[1])
     bcs = [measure_Ux, measure_Uy]
 
 elif args.measurments_type == "strain":
@@ -150,12 +151,13 @@ elif args.measurments_type == "strain":
     X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
     DIC_data = strain_fn(X_DIC_input)
     DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-    measure_Exx = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1],
-                                           lambda x, f, x_np: strain_from_output(x, f)[:, 0:1])
-    measure_Eyy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2],
-                                           lambda x, f, x_np: strain_from_output(x, f)[:, 1:2])
-    measure_Exy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 2:3],
-                                           lambda x, f, x_np: strain_from_output(x, f)[:, 2:3])
+    DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
+    measure_Exx = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1]/DIC_norms[0],
+                                           lambda x, f, x_np: strain_from_output(x, f)[:, 0:1]/DIC_norms[0])
+    measure_Eyy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2]/DIC_norms[1],
+                                           lambda x, f, x_np: strain_from_output(x, f)[:, 1:2]/DIC_norms[1])
+    measure_Exy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 2:3]/DIC_norms[2],
+                                           lambda x, f, x_np: strain_from_output(x, f)[:, 2:3]/DIC_norms[2])
     bcs = [measure_Exx, measure_Eyy, measure_Exy]
 
 elif args.measurments_type == "DIC":
@@ -177,18 +179,19 @@ elif args.measurments_type == "DIC":
         print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
     args.n_measurments = x_values.shape[0] * y_values.shape[0]
 
-    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, Ux_dic,
-                                          lambda x, f, x_np: f[0][:, 0:1])
-    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, Uy_dic,
-                                          lambda x, f, x_np: f[0][:, 1:2])
+    DIC_norms = np.mean(np.abs(np.hstack([Ux_dic, Uy_dic])), axis=0) # to normalize the loss
+    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, Ux_dic/DIC_norms[0],
+                                          lambda x, f, x_np: f[0][:, 0:1]/DIC_norms[0])
+    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, Uy_dic/DIC_norms[1],
+                                          lambda x, f, x_np: f[0][:, 1:2]/DIC_norms[1])
     bcs = [measure_Ux, measure_Uy]
 
 # Use measurements norm as the default scaling factor
 if args.measurments_type == "DIC":
-    DIC_norms = np.linalg.norm(np.hstack([Ux_dic, Uy_dic]), axis=0)
+    disp_norms = np.mean(np.abs(np.hstack([Ux_dic, Uy_dic])), axis=0)
 else:
-    DIC_norms = np.linalg.norm(solution_fn(X_DIC_input)[:, :2], axis=0)
-args.u_0 = [DIC_norms[i] if not args.u_0[i] else args.u_0[i] for i in range(2)]
+    disp_norms = np.mean(np.abs(solution_fn(X_DIC_input)[:, :2]), axis=0)
+args.u_0 = [disp_norms[i] if not args.u_0[i] else args.u_0[i] for i in range(2)]
 
 # =============================================================================
 # 6. PINN Implementation: Boundary Conditions and PDE Residual
@@ -237,10 +240,10 @@ def pde(x, f, unknowns=params_factor):
     momentum_x = Sxx_x + Sxy_y
     momentum_y = Sxy_x + Syy_y
     
-    f_internal = f[0]
-    stress_x  = S_xx - f_internal[:, 2:3]
-    stress_y  = S_yy - f_internal[:, 3:4]
-    stress_xy = S_xy - f_internal[:, 4:5]
+    f_val = f[0] # f[1] is the function 
+    stress_x  = S_xx - f_val[:, 2:3]
+    stress_y  = S_yy - f_val[:, 3:4]
+    stress_xy = S_xy - f_val[:, 4:5]
     return [momentum_x, momentum_y, stress_x, stress_y, stress_xy]
 
 # =============================================================================
@@ -266,7 +269,8 @@ net.apply_output_transform(HardBC)
 
 model = dde.Model(data, net)
 model.compile(args.optimizer, lr=args.lr, metrics=["l2 relative error"],
-              loss_weights=args.loss_weights, external_trainable_variables=trainable_variables)
+              loss_weights=args.loss_weights, loss=args.loss_fn,
+              external_trainable_variables=trainable_variables)
 
 # =============================================================================
 # 8. Setup Callbacks for Logging
@@ -303,7 +307,7 @@ for i, field in enumerate(args.log_output_fields): # Log output fields
 # 9. Training
 # =============================================================================
 start_time = time.time()
-print(f"E: {E_init * params_factor[0].value * args.params_iter_speed[0]:.3f}, nu: {nu_init * params_factor[1].value * args.params_iter_speed[1]:.3f}")
+print(f"E(GPa): {E_init * params_factor[0].value * args.params_iter_speed[0]/1e3:.3f}, nu: {nu_init * params_factor[1].value * args.params_iter_speed[1]:.3f}")
 losshistory, train_state = model.train(iterations=args.n_iter, callbacks=callbacks, display_every=args.log_every)
 elapsed = time.time() - start_time
 
@@ -332,7 +336,7 @@ with open(variables_history_path, "r") as f:
 # Final E and nu values as the average of the last 10 values 
 E_final = np.mean([eval(line.strip().split(' ', 1)[1])[0] for line in lines[-10:]])
 nu_final = np.mean([eval(line.strip().split(' ', 1)[1])[1] for line in lines[-10:]])
-print(f"Final E: {E_final:.3f}, nu: {nu_final:.3f}")
+print(f"Final E(GPa): {E_final/1e3:.3f}, nu: {nu_final:.3f}")
 
 def log_config(fname):
     """

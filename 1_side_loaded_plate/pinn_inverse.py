@@ -17,6 +17,7 @@ import jax
 import jax.numpy as jnp
 import deepxde as dde
 from scipy.interpolate import RegularGridInterpolator
+import pandas as pd
 
 # =============================================================================
 # 1. Utility Function: Coordinate Transformation for SPINN
@@ -36,7 +37,7 @@ parser = argparse.ArgumentParser(description="Physics Informed Neural Networks f
 parser.add_argument('--n_iter', type=int, default=int(1e10), help='Number of iterations')
 parser.add_argument('--log_every', type=int, default=250, help='Log every n steps')
 parser.add_argument('--available_time', type=int, default=2, help='Available time in minutes')
-parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
+parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Exx', 'Eyy', 'Exy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_fn', nargs='+', default='MSE', help='Loss functions')
 parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1,1], help='Loss weights (more on DIC points)')
@@ -50,14 +51,15 @@ parser.add_argument('--optimizer', choices=['adam'], default='adam', help='Optim
 parser.add_argument('--mlp', choices=['mlp', 'modified_mlp'], default='mlp', help='Type of MLP for SPINN')
 parser.add_argument('--initialization', choices=['Glorot uniform', 'He normal'], default='Glorot uniform', help='Initialization method')
 
-parser.add_argument('--measurments_type', choices=['displacement','strain','DIC'], default='strain', help='Type of measurements')
-parser.add_argument('--n_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
-parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude')
+parser.add_argument('--measurments_type', choices=['displacement','strain'], default='strain', help='Type of measurements')
+parser.add_argument('--num_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
+parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 
 parser.add_argument('--FEM_dataset', type=str, default='3x3mm.dat', help='Path to FEM data')
-parser.add_argument('--DIC_dataset', type=str, default='3mm_0noise', help='Only for DIC measurements type')
+parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements')
+parser.add_argument('--DIC_dataset_number', type=int, default=1, help='Only for DIC simulated measurements')
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
 
 args = parser.parse_args()
@@ -75,12 +77,17 @@ dde.config.set_default_autodiff("forward")
 # 3. Global Constants, Geometry, and Material Parameters
 # =============================================================================
 # /!\ Distances are in mm, forces in N, Young's modulus in N/mm^2
-L_max     = 3.0 # Plate width in mm
+if args.FEM_dataset == '3x3mm.dat': # Martin et al. (2019) example
+    L_max = 3.0 # Plate width in mm
+    m, b  = 10, 50  # Side-load parameters 10 N/mm, 50 N
+else : # Realistic DIC experiment (100x100mm plate)
+    L_max = 100.0 # Plate width in mm
+    m, b  = 0.3, 50 # Side-load parameters 0.3 N/mm, 50 N
+
 E_actual  = 210e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
 nu_actual = 0.3     # Actual Poisson's ratio
 E_init    = 100e3   # Initial guess for Young's modulus
 nu_init   = 0.2     # Initial guess for Poisson's ratio
-m, b = 10, 50  # Side-load parameters 10 N/mm, 50 N
 
 def side_load(y):
     return m * y + b
@@ -93,7 +100,7 @@ trainable_variables = params_factor
 # 4. Load FEM Data and Build Interpolation Functions
 # =============================================================================
 dir_path = os.path.dirname(os.path.realpath(__file__))
-fem_file = os.path.join(dir_path, r"fem_data", args.FEM_dataset)
+fem_file = os.path.join(dir_path, r"data_fem", args.FEM_dataset)
 data = np.loadtxt(fem_file)
 X_val      = data[:, :2]
 u_val      = data[:, 2:4]
@@ -122,14 +129,40 @@ def create_interpolation_fn(data_array):
 solution_fn = create_interpolation_fn(solution_val)
 strain_fn   = create_interpolation_fn(strain_val)
 
+def strain_from_output(x, f):
+    """
+    Compute strain components from the network output for strain measurements.
+    """
+    x = transform_coords(x)
+    E_xx = dde.grad.jacobian(f, x, i=0, j=0)[0]
+    E_yy = dde.grad.jacobian(f, x, i=1, j=1)[0]
+    E_xy = 0.5 * (dde.grad.jacobian(f, x, i=0, j=1)[0] + dde.grad.jacobian(f, x, i=1, j=0)[0])
+    return jnp.hstack([E_xx, E_yy, E_xy])
+
 # =============================================================================
 # 5. Setup Measurement Data Based on Type (Displacement, Strain, DIC)
 # =============================================================================
-args.n_measurments = int(np.sqrt(args.n_measurments))**2
-if args.measurments_type == "displacement":    
-    X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
-    DIC_data = solution_fn(X_DIC_input)[:, :2]
-    DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
+args.num_measurments = int(np.sqrt(args.num_measurments))**2
+if args.measurments_type == "displacement":
+    if args.DIC_dataset_path != "no_dataset":
+        dic_path = os.path.join(dir_path, args.DIC_dataset_path)
+        dic_number = args.DIC_dataset_number
+        X_dic = pd.read_csv(os.path.join(dic_path, "x", f"x_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
+        Y_dic = pd.read_csv(os.path.join(dic_path, "y", f"y_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
+        Ux_dic = pd.read_csv(os.path.join(dic_path, "ux", f"ux_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+        Uy_dic = pd.read_csv(os.path.join(dic_path, "uy", f"uy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+        DIC_data = np.hstack([Ux_dic, Uy_dic])
+        x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
+        y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
+        X_DIC_input = [x_values, y_values]
+        if args.num_measurments != x_values.shape[0] * y_values.shape[0]:
+            print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
+            args.num_measurments = x_values.shape[0] * y_values.shape[0]
+    else:
+        X_DIC_input = [np.linspace(0, L_max, args.num_measurments).reshape(-1, 1)] * 2
+        DIC_data = solution_fn(X_DIC_input)[:, :2]
+        DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
+
     DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
     measure_Ux = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1]/DIC_norms[0],
                                           lambda x, f, x_np: f[0][:, 0:1]/DIC_norms[0])
@@ -138,19 +171,27 @@ if args.measurments_type == "displacement":
     bcs = [measure_Ux, measure_Uy]
 
 elif args.measurments_type == "strain":
-    def strain_from_output(x, f):
-        """
-        Compute strain components from the network output for strain measurements.
-        """
-        x = transform_coords(x)
-        E_xx = dde.grad.jacobian(f, x, i=0, j=0)[0]
-        E_yy = dde.grad.jacobian(f, x, i=1, j=1)[0]
-        E_xy = 0.5 * (dde.grad.jacobian(f, x, i=0, j=1)[0] + dde.grad.jacobian(f, x, i=1, j=0)[0])
-        return jnp.hstack([E_xx, E_yy, E_xy])
-
-    X_DIC_input = [np.linspace(0, L_max, args.n_measurments).reshape(-1, 1)] * 2
-    DIC_data = strain_fn(X_DIC_input)
-    DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
+    if args.DIC_dataset_path != "no_dataset":
+        dic_path = os.path.join(dir_path, args.DIC_dataset_path)
+        dic_number = args.DIC_dataset_number
+        X_dic = pd.read_csv(os.path.join(dic_path, "x", f"x_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
+        Y_dic = pd.read_csv(os.path.join(dic_path, "y", f"y_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
+        Ux_dic = pd.read_csv(os.path.join(dic_path, "ux", f"ux_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+        Uy_dic = pd.read_csv(os.path.join(dic_path, "uy", f"uy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+        E_xx_dic = pd.read_csv(os.path.join(dic_path, "exx", f"exx_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+        E_yy_dic = pd.read_csv(os.path.join(dic_path, "eyy", f"eyy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+        E_xy_dic = pd.read_csv(os.path.join(dic_path, "exy", f"exy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+        x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
+        y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
+        X_DIC_input = [x_values, y_values]
+        DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
+        if args.num_measurments != x_values.shape[0] * y_values.shape[0]:
+            print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
+            args.num_measurments = x_values.shape[0] * y_values.shape[0]
+    else:
+        X_DIC_input = [np.linspace(0, L_max, args.num_measurments).reshape(-1, 1)] * 2
+        DIC_data = strain_fn(X_DIC_input)
+        DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
     DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
     measure_Exx = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1]/DIC_norms[0],
                                            lambda x, f, x_np: strain_from_output(x, f)[:, 0:1]/DIC_norms[0])
@@ -160,34 +201,11 @@ elif args.measurments_type == "strain":
                                            lambda x, f, x_np: strain_from_output(x, f)[:, 2:3]/DIC_norms[2])
     bcs = [measure_Exx, measure_Eyy, measure_Exy]
 
-elif args.measurments_type == "DIC":
-    import pandas as pd
-    dic_path = os.path.join(dir_path, f"dic_data/{args.DIC_dataset}")
-    X_dic = pd.read_csv(os.path.join(dic_path, "X_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_X_trans.csv"),
-                        delimiter=";").dropna(axis=1).to_numpy()
-    Y_dic = pd.read_csv(os.path.join(dic_path, "Y_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_Y_trans.csv"),
-                        delimiter=";").dropna(axis=1).to_numpy()
-    Ux_dic = pd.read_csv(os.path.join(dic_path, "U_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_U_trans.csv"),
-                         delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-    Uy_dic = pd.read_csv(os.path.join(dic_path, "V_trans", "pattern_2MP_Numerical_1_0.synthetic.tif_V_trans.csv"),
-                         delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-    x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
-    y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
-    X_DIC_input = [x_values, y_values]
-    
-    if args.n_measurments != x_values.shape[0] * y_values.shape[0]:
-        print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
-    args.n_measurments = x_values.shape[0] * y_values.shape[0]
-
-    DIC_norms = np.mean(np.abs(np.hstack([Ux_dic, Uy_dic])), axis=0) # to normalize the loss
-    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, Ux_dic/DIC_norms[0],
-                                          lambda x, f, x_np: f[0][:, 0:1]/DIC_norms[0])
-    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, Uy_dic/DIC_norms[1],
-                                          lambda x, f, x_np: f[0][:, 1:2]/DIC_norms[1])
-    bcs = [measure_Ux, measure_Uy]
+else:
+    raise ValueError("Invalid measurement type. Choose 'displacement' or 'strain'.")
 
 # Use measurements norm as the default scaling factor
-if args.measurments_type == "DIC":
+if args.DIC_dataset_path != "no_dataset":
     disp_norms = np.mean(np.abs(np.hstack([Ux_dic, Uy_dic])), axis=0)
 else:
     disp_norms = np.mean(np.abs(solution_fn(X_DIC_input)[:, :2]), axis=0)
@@ -206,11 +224,11 @@ def HardBC(x, f, x_max=L_max):
     """
     if isinstance(x, list):
         x = transform_coords(x)
-    Ux  = f[:, 0] * x[:, 0] * args.u_0[0] 
-    Uy  = f[:, 1] * x[:, 1] * args.u_0[1]
-    Sxx = f[:, 2] * (x_max - x[:, 0]) + side_load(x[:, 1])
-    Syy = f[:, 3] * (x_max - x[:, 1])
-    Sxy = f[:, 4] * x[:, 0] * (x_max - x[:, 0]) * x[:, 1] * (x_max - x[:, 1])
+    Ux  = f[:, 0] * x[:, 0]/x_max * args.u_0[0] 
+    Uy  = f[:, 1] * x[:, 1]/x_max * args.u_0[1]
+    Sxx = f[:, 2] * (x_max - x[:, 0])/x_max + side_load(x[:, 1])
+    Syy = f[:, 3] * (x_max - x[:, 1])/x_max
+    Sxy = f[:, 4] * x[:, 0]/x_max * (x_max - x[:, 0])/x_max * x[:, 1]/x_max * (x_max - x[:, 1])/x_max
     return dde.backend.stack((Ux, Uy, Sxx, Syy, Sxy), axis=1)
 
 def pde(x, f, unknowns=params_factor):
@@ -251,18 +269,16 @@ def pde(x, f, unknowns=params_factor):
 # =============================================================================
 layers = [2] + [args.net_width] * args.net_depth + [5]
 net = dde.nn.SPINN(layers, args.activation, args.initialization, args.mlp)
-num_point_PDE = args.num_point_PDE
-batch_size = num_point_PDE + args.n_measurments
+batch_size = args.num_point_PDE + args.num_measurments
 num_params = sum(p.size for p in jax.tree.leaves(net.init(jax.random.PRNGKey(0), jnp.ones(layers[0]))))
-num_test = 100000
 
 data = dde.data.PDE(
     geom,
     pde,
     bcs,
-    num_domain=num_point_PDE,
+    num_domain=args.num_point_PDE,
     solution=solution_fn,
-    num_test=num_test,
+    num_test=args.num_point_test,
     is_SPINN=True,
 )
 net.apply_output_transform(HardBC)
@@ -276,7 +292,13 @@ model.compile(args.optimizer, lr=args.lr, metrics=["l2 relative error"],
 # 8. Setup Callbacks for Logging
 # =============================================================================
 results_path = os.path.join(dir_path, args.results_path)
-folder_name = f"{args.measurments_type}_x{args.n_measurments}_{args.noise_magnitude}noise_{args.available_time if args.available_time else args.n_iter}{'min' if args.available_time else 'iter'}"
+if args.DIC_dataset_path != "no_dataset":
+    dic_prefix = 'dic_'
+    noise_prefix = args.DIC_dataset_path.split('/')[-1]
+else:
+    dic_prefix = ''
+    noise_prefix = f"{args.noise_magnitude}noise"
+folder_name = f"{dic_prefix}{args.measurments_type}_x{args.num_measurments}_{noise_prefix}_{args.available_time if args.available_time else args.n_iter}{'min' if args.available_time else 'iter'}"
 existing_folders = [f for f in os.listdir(results_path) if f.startswith(folder_name)]
 if existing_folders:
     suffixes = [int(f.split("-")[-1]) for f in existing_folders if f != folder_name]
@@ -291,12 +313,21 @@ if args.available_time:
 callbacks.append(dde.callbacks.VariableValue(params_factor, period=args.log_every,
                                                filename=os.path.join(new_folder_path, "variables_history.dat"),
                                                precision=8))
+
+# Log the history of the output fields
+def output_log(x, output, field):
+    if field in ['Ux', 'Uy', 'Sxx', 'Syy', 'Sxy']:
+        return output[0][:, ['Ux', 'Uy', 'Sxx', 'Syy', 'Sxy'].index(field)]
+    if field in ['Exx', 'Eyy', 'Exy']:
+        return strain_from_output(x, output)[:, ['Exx', 'Eyy', 'Exy'].index(field)]
+    raise ValueError(f"Invalid field name: {field}")
+        
 X_plot = [np.linspace(0, L_max, 100).reshape(-1, 1)] * 2
 for i, field in enumerate(args.log_output_fields): # Log output fields
     callbacks.append(
         dde.callbacks.OperatorPredictor(
             X_plot,
-            lambda x, output, i=i: output[0][:, i],
+            lambda x, output, field=field: output_log(x, output, field),
             period=args.log_every,
             filename=os.path.join(new_folder_path, f"{field}_history.dat"),
             precision=6
@@ -383,9 +414,12 @@ def log_config(fname):
         "nu_final": nu_final,
     }
     data_info = {
-        "n_measurments": (int(np.sqrt(args.n_measurments)))**2,
+        "num_measurments": (int(np.sqrt(args.num_measurments)))**2,
         "noise_magnitude": args.noise_magnitude,
         "measurments_type": args.measurments_type,
+        "DIC_dataset_path": args.DIC_dataset_path,
+        "DIC_dataset_number": args.DIC_dataset_number,
+        "FEM_dataset": args.FEM_dataset, 
     }
     info = {"system": system_info, "gpu": gpu_info, "execution": execution_info,
             "network": network_info, "problem": problem_info, "data": data_info}

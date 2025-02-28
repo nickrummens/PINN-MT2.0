@@ -6,12 +6,13 @@ executable_path = os.path.join(os.path.dirname(__file__), "../pinn_inverse.py")
 num_runs = 1
 
 args = {
+    "FEM_dataset": "3x3mm.dat",
     "available_time": 2,
     "measurments_type": "strain",
     "noise_magnitude": 1e-6,
-    "results_path": "comparison_Martins2019/results",
+    "loss_weights": [1,1,1,1,1,1e2,1e2],
+    "results_path": "1_comparison_Martins2019/results",
     "log_every": 250,
-    "loss_weights": [1,1,1,1,1e2,1e2,1e2],
     # "log_output_fields": [''],
 }
 

@@ -1,0 +1,1 @@
+VSG study on the line y=0 for eyy for Strain Window in 35,37,39,41 corresponding to strain gauge from 361 to 421px (for 1024px image width)

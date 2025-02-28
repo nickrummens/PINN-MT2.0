@@ -26,7 +26,7 @@ def transform_coords(x):
     For SPINN, if the input x is provided as a list of 1D arrays (e.g., [X_coords, Y_coords]),
     this function creates a 2D meshgrid and stacks the results into a 2D coordinate array.
     """
-    x_mesh = [x_.ravel() for x_ in jnp.meshgrid(x[0].squeeze(), x[1].squeeze(), indexing="ij")]
+    x_mesh = [x_.ravel() for x_ in jnp.meshgrid(jnp.atleast_1d(x[0].squeeze()), jnp.atleast_1d(x[1].squeeze()), indexing="ij")]
     return dde.backend.stack(x_mesh, axis=-1)
 
 # =============================================================================
@@ -34,17 +34,18 @@ def transform_coords(x):
 # =============================================================================
 parser = argparse.ArgumentParser(description="Physics Informed Neural Networks for Linear Elastic Plate")
 parser.add_argument('--n_iter', type=int, default=int(1e10), help='Number of iterations')
-parser.add_argument('--log_every', type=int, default=10, help='Log every n steps')
-parser.add_argument('--available_time', type=int, default=2, help='Available time in minutes')
+parser.add_argument('--log_every', type=int, default=250, help='Log every n steps')
+parser.add_argument('--available_time', type=int, default=5, help='Available time in minutes (overrides n_iter except if 0)')
 parser.add_argument('--log_output_fields', nargs='*', default=['W'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_fn', nargs='+', default='MSE', help='Loss functions')
-parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1e2], help='Loss weights (more on DIC points)')
-parser.add_argument('--num_point_PDE', type=int, default=16, help='Number of collocation points for PDE evaluation')
-parser.add_argument('--num_point_test', type=int, default=30, help='Number of test points')
+parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1e4,1e4,1e4,1e4,1e1], help='Loss weights (more on DIC points)')
+parser.add_argument('--num_point_PDE', type=int, default=1000, help='Number of collocation points for PDE evaluation')
+parser.add_argument('--num_point_test', type=int, default=10000, help='Number of test points')
 
 parser.add_argument('--net_width', type=int, default=32, help='Width of the network')
-parser.add_argument('--net_depth', type=int, default=4, help='Depth of the network')
+parser.add_argument('--net_depth', type=int, default=2, help='Depth of the network')
+parser.add_argument('--net_rank', type=int, default=32, help='Rank of the network')
 parser.add_argument('--activation', choices=['tanh', 'relu', 'elu'], default='tanh', help='Activation function')
 parser.add_argument('--optimizer', choices=['adam'], default='adam', help='Optimizer')
 parser.add_argument('--mlp', choices=['mlp', 'modified_mlp'], default='mlp', help='Type of MLP for SPINN')
@@ -85,7 +86,7 @@ D_actual = E_actual * t**3 / (12 * (1 - nu_actual**2))  # Actual flexural rigidi
 
 # Create trainable scaling factors (one per parameter)
 param_factor = dde.Variable(1 / args.param_iter_speed) 
-trainable_variable = param_factor
+trainable_variables = param_factor
 
 # =============================================================================
 # 4. Load FEM Data and Build Interpolation Functions
@@ -117,7 +118,7 @@ if args.measurments_type == "displacement":
     DIC_norm = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
     measure_W = dde.PointSetOperatorBC(X_DIC_input, DIC_data/DIC_norm,
                                           lambda x, f, x_np: f[0]/DIC_norm)
-    bcs = measure_W
+    bcs = [measure_W]
 
 elif args.measurments_type == "DIC":
     import pandas as pd
@@ -140,10 +141,10 @@ elif args.measurments_type == "DIC":
     measure_W = dde.PointSetOperatorBC(X_DIC_input, W_dic/DIC_norm,
                                           lambda x, f, x_np: f[0][:, 0:1]/DIC_norm)
 
-    bcs = measure_W
+    bcs = [measure_W]
 
 # Use measurements norm as the default scaling factor
-args.w_0 = DIC_norm if not args.w_0 else args.w_0
+args.w_0 = DIC_norm.item() if not args.w_0 else args.w_0
 
 # =============================================================================
 # 6. PINN Implementation: Boundary Conditions and PDE Residual
@@ -168,7 +169,7 @@ def pde(x, f, unknowns=param_factor):
     x = transform_coords(x)
     
     param_factor = unknowns[0]*args.param_iter_speed
-    D = D_init * param_factor
+    D = D_init * param_factor**2
     # Compute the required derivatives
     w_x1x1 = dde.grad.hessian(f, x, i=0, j=0)  # ∂²w/∂x₁²
     w_x2x2 = dde.grad.hessian(f, x, i=1, j=1)  # ∂²w/∂x₂²
@@ -176,12 +177,28 @@ def pde(x, f, unknowns=param_factor):
     w_x2x2x2x2 = dde.grad.hessian(w_x2x2, x, i=1, j=1)[0]  # ∂⁴w/∂x₂⁴
     w_x1x2x1x2 = dde.grad.hessian(w_x1x1, x, i=1, j=1)[0]  # ∂⁴w/∂x₁²∂x₂²
     
-    return w_x1x1x1x1 + 2 * w_x1x2x1x2 + w_x2x2x2x2 + q / D 
+    return w_x1x1x1x1 + 2 * w_x1x2x1x2 + w_x2x2x2x2 - q / D 
+
+bc_point_left = [np.array([0]).reshape(-1,1), np.linspace(0, 1, 100).reshape(-1,1)]
+bc_point_right = [np.array([1]).reshape(-1,1), np.linspace(0, 1, 100).reshape(-1,1)]
+bc_point_bottom = [np.linspace(0, 1, 100).reshape(-1,1), np.array([0]).reshape(-1,1)]
+bc_point_top = [np.linspace(0, 1, 100).reshape(-1,1), np.array([1]).reshape(-1,1)]
+
+def jacobian_spinn(x, f, x_np, j):
+    x_in = transform_coords(x)
+    return dde.grad.jacobian(f, x_in, i=0, j=j)[0]
+
+bc_left = dde.PointSetOperatorBC(bc_point_left, 0, lambda x, f, x_np, j=0: jacobian_spinn(x, f, x_np, j))
+bc_right = dde.PointSetOperatorBC(bc_point_right, 0, lambda x, f, x_np, j=0: jacobian_spinn(x, f, x_np, j))
+bc_bottom = dde.PointSetOperatorBC(bc_point_bottom, 0, lambda x, f, x_np, j=1: jacobian_spinn(x, f, x_np, j))
+bc_top = dde.PointSetOperatorBC(bc_point_top, 0, lambda x, f, x_np, j=1: jacobian_spinn(x, f, x_np, j))
+
+bcs = [bc_left, bc_right, bc_bottom, bc_top] + bcs
 
 # =============================================================================
 # 7. Define Neural Network, Data, and Model
 # =============================================================================
-layers = [2] + [args.net_width] * args.net_depth + [1]
+layers = [2] + [args.net_width] * args.net_depth + [args.net_rank] + [1]
 net = dde.nn.SPINN(layers, args.activation, args.initialization, args.mlp)
 batch_size = args.num_point_PDE + args.n_measurments
 num_params = sum(p.size for p in jax.tree.leaves(net.init(jax.random.PRNGKey(0), jnp.ones(layers[0]))))
@@ -200,7 +217,7 @@ net.apply_output_transform(HardBC)
 model = dde.Model(data, net)
 model.compile(args.optimizer, lr=args.lr, metrics=["l2 relative error"],
               loss_weights=args.loss_weights, loss=args.loss_fn,
-              external_trainable_variables=trainable_variable)
+              external_trainable_variables=trainable_variables)
 
 # =============================================================================
 # 8. Setup Callbacks for Logging
@@ -237,7 +254,7 @@ for i, field in enumerate(args.log_output_fields): # Log output fields
 # 9. Training
 # =============================================================================
 start_time = time.time()
-print(f"Initial D: {D_init*param_factor.value*args.param_iter_speed:.3e} | {D_actual:.3e}")
+print(f"Initial D: {D_init*(param_factor.value*args.param_iter_speed)**2:.3e} | {D_actual:.3e}")
 losshistory, train_state = model.train(iterations=args.n_iter, callbacks=callbacks, display_every=args.log_every)
 elapsed = time.time() - start_time
 
@@ -257,7 +274,7 @@ with open(variables_history_path, "r") as f:
 with open(variables_history_path, "w") as f:
     for line in lines:
         step, value = line.strip().split(' ', 1)
-        value = [args.param_iter_speed*D_init*eval(value)[0]]
+        value = [D_init*(args.param_iter_speed*eval(value)[0])**2]
         f.write(f"{step} "+dde.utils.list_to_str(value, precision=8)+"\n")
 
 # Read the variables history
@@ -299,7 +316,7 @@ def log_config(fname):
         "lr": args.lr,
         "loss_weights": args.loss_weights,
         "param_iter_speed": args.param_iter_speed,
-        "u_0": args.u_0,
+        "u_0": args.w_0,
         "logged_fields": args.log_output_fields,
     }
     problem_info = {

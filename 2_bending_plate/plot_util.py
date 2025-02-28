@@ -65,70 +65,51 @@ def update_metrics(iteration, lines, scatters, steps, metrics, metrics_idx=[0]):
         scatter.set_offsets([steps[iteration], metrics[idx][iteration]])
     return lines, scatters
 
-def init_variables(axs, steps, param1_actual, param2_actual, param1_history, param2_history, param1_name, param2_name):
+def init_variable(ax, steps, param_actual, param_history, param_name):
     """
-    Initialize parameter evolution plots on two given axes.
+    Initialize a parameter evolution plot on the given axis.
     
     Parameters:
-        axs (list): Two axes for the two parameters.
+        ax (matplotlib.axes.Axes): Axis to plot on.
         steps (array-like): x-axis data.
-        param1_actual (float): Reference value for parameter 1.
-        param2_actual (float): Reference value for parameter 2.
-        param1_history (array-like): History of parameter 1 estimates.
-        param2_history (array-like): History of parameter 2 estimates.
-        param1_name (str): Label for parameter 1.
-        param2_name (str): Label for parameter 2.
+        param_actual (float): Reference value for the parameter.
+        param_history (array-like): History of parameter estimates.
+        param_name (str): Label for the parameter.
     
     Returns:
-        line_param1, line_param2, scatter_param1, scatter_param2, axs
+        line_param, scatter_param, ax
     """
-    axs[0].hlines(y=param1_actual, xmin=0, xmax=np.max(steps), linestyles='-.', colors="b")
-    axs[1].hlines(y=param2_actual, xmin=0, xmax=np.max(steps), linestyles='-.', colors="r")
-    line_param1, = axs[0].plot([], [], color='b', zorder=3)
-    line_param2, = axs[1].plot([], [], color='r', zorder=3)
-    axs[0].plot(steps, param1_history, color='b', alpha=0.2)
-    axs[1].plot(steps, param2_history, color='r', alpha=0.2)
-    scatter_param1 = axs[0].scatter([], [], c='k', zorder=4,
-                                 label=f"{param2_name} = {param2_history[0]:.3f}")#|{param2_actual:.3f}")
-    scatter_param2 = axs[1].scatter([], [], c='k', zorder=4,
-                                 label=f"{param2_name} = {param2_history[0]:.3f}")#|{param2_actual:.3f}")
-    axs[0].legend()
-    axs[1].legend()
-    return line_param1, line_param2, scatter_param1, scatter_param2, axs
+    ax.hlines(y=param_actual, xmin=0, xmax=np.max(steps), linestyles='-.', colors="b")
+    line_param, = ax.plot([], [], color='b', zorder=3)
+    ax.plot(steps, param_history, color='b', alpha=0.2)
+    scatter_param = ax.scatter([], [], c='k', zorder=4,
+                               label=f"{param_name} = {param_history[0]:.3e}")
+    ax.legend()
+    return line_param, scatter_param, ax
 
-def update_variables(iteration, line_param1, line_param2, scatter_param1, scatter_param2, axs,
-                     steps, param1_history, param2_history, param1_actual, param2_actual, param1_name, param2_name):
+def update_variable(iteration, line_param, scatter_param, ax, steps, param_history, param_actual, param_name):
     """
-    Update the parameter evolution plots for the given iteration.
+    Update the parameter evolution plot for the given iteration.
     
     Parameters:
         iteration (int): Current index.
-        line_param1, line_param2: Line objects for parameters.
-        scatter_param1, scatter_param2: Scatter objects.
-        axs (list): Two axes.
+        line_param: Line object for the parameter.
+        scatter_param: Scatter object.
+        ax (matplotlib.axes.Axes): Axis to plot on.
         steps (array-like): x-axis data.
-        param1_history (array-like): History of parameter 1.
-        param2_history (array-like): History of parameter 2.
-        param1_actual (float): Reference value for parameter 1.
-        param2_actual (float): Reference value for parameter 2.
-        param1_name (str): Label for parameter 1.
-        param2_name (str): Label for parameter 2.
+        param_history (array-like): History of the parameter.
+        param_actual (float): Reference value for the parameter.
+        param_name (str): Label for the parameter.
     
     Returns:
-        Updated line and scatter objects and axes.
+        Updated line and scatter objects and axis.
     """
-    line_param1.set_data(steps[:iteration+1], param1_history[:iteration+1])
-    scatter_param1.set_offsets([steps[iteration], param1_history[iteration]])
-    scatter_param1.set_label(f"{param1_name} = {param1_history[iteration]:.1f}")# | {param1_actual:.1f}")
+    line_param.set_data(steps[:iteration+1], param_history[:iteration+1])
+    scatter_param.set_offsets([steps[iteration], param_history[iteration]])
+    scatter_param.set_label(f"{param_name} = {param_history[iteration]:.3e}")
     
-    line_param2.set_data(steps[:iteration+1], param2_history[:iteration+1])
-    scatter_param2.set_offsets([steps[iteration], param2_history[iteration]])
-    scatter_param2.set_label(f"{param2_name} = {param2_history[iteration]:.3f}")# | {param2_actual:.3f}")
-
-    
-    axs[0].legend()
-    axs[1].legend()
-    return line_param1, line_param2, scatter_param1, scatter_param2, axs
+    ax.legend()
+    return line_param, scatter_param, ax
 
 
 def pcolor_plot(ax, X, Y, C, title, colormap="viridis", norm=None):

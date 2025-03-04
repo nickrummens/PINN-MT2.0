@@ -36,11 +36,11 @@ def transform_coords(x):
 parser = argparse.ArgumentParser(description="Physics Informed Neural Networks for Linear Elastic Plate")
 parser.add_argument('--n_iter', type=int, default=int(1e10), help='Number of iterations')
 parser.add_argument('--log_every', type=int, default=250, help='Log every n steps')
-parser.add_argument('--available_time', type=int, default=2, help='Available time in minutes')
+parser.add_argument('--available_time', type=int, default=10, help='Available time in minutes')
 parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Exx', 'Eyy', 'Exy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_fn', nargs='+', default='MSE', help='Loss functions')
-parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1,1], help='Loss weights (more on DIC points)')
+parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1,1,1], help='Loss weights (more on DIC points)')
 parser.add_argument('--num_point_PDE', type=int, default=10000, help='Number of collocation points for PDE evaluation')
 parser.add_argument('--num_point_test', type=int, default=100000, help='Number of test points')
 
@@ -56,7 +56,7 @@ parser.add_argument('--num_measurments', type=int, default=16, help='Number of m
 parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
-parser.add_argument('--coord_normalization', type=bool, default=True, help='Normalize the input coordinates')
+parser.add_argument('--coord_normalization', type=bool, default=False, help='Normalize the input coordinates')
 
 parser.add_argument('--FEM_dataset', type=str, default='fem_solution_dogbone_experiments.dat', help='Path to FEM data')
 parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements')
@@ -80,7 +80,7 @@ dde.config.set_default_autodiff("forward")
 # /!\ Distances are in mm, forces in N, Young's modulus in N/mm^2
 L_max = 10.0 # dogbone clamp width
 H_max = 60.0
-x_max = 1.0 if args.coord_normalization else L_max
+
 
 R = 20
 theta = np.arccos(15/R)
@@ -95,6 +95,7 @@ total_points_vert = 140 #see geometry mapping code
 total_points_hor = 40
 x_max_FEM = (2*indent_x) + b
 y_max_FEM = 2*H_clamp + 2*indent_y + L_c
+t = 1.5 #thickness
 
 #ROI positioning
 offs_x = indent_x
@@ -102,11 +103,19 @@ offs_y = indent_y + H_clamp + (L_c-L_u)/2
 x_max_ROI = b
 y_max_ROI = L_u
 
+offsets = [offs_x, offs_y]
+ROI = [b, L_u]
+
+x_max_full = [offs_x + x_max_ROI, offs_y + y_max_ROI]
+
+x_max = [1.0, 1.0] if args.coord_normalization else x_max_full
 
 E_actual  = 69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
 nu_actual = 0.33     # Actual Poisson's ratio
-E_init    = 40e3   # Initial guess for Young's modulus
-nu_init   = 0.2     # Initial guess for Poisson's ratio
+E_init    = 50e3   # Initial guess for Young's modulus
+nu_init   = 0.25     # Initial guess for Poisson's ratio
+
+p_stress = 9
 
 # Create trainable scaling factors (one per parameter)
 params_factor = [dde.Variable(1 / s) for s in args.params_iter_speed]
@@ -156,6 +165,27 @@ def strain_from_output(x, f):
     return jnp.hstack([E_xx, E_yy, E_xy])
 
 # =============================================================================
+# 5.2 Stress Integral
+# =============================================================================
+
+n_integral = 1000
+x_integral = np.linspace(offs_x, offs_x + x_max_ROI, n_integral).reshape(-1, 1)
+y_integral = np.linspace(offs_y, offs_y + y_max_ROI, n_integral).reshape(-1, 1)
+integral_points = [x_integral, y_integral]
+
+
+def integral_stress(inputs, outputs, X):
+    x = transform_coords(inputs)
+    x_mesh = x[:,0].reshape((inputs[0].shape[0], inputs[0].shape[0]))
+    Syy = outputs[0][:, 3:4].reshape(x_mesh.shape)
+    return jnp.trapezoid(Syy, x_mesh, axis=0)*t
+
+Integral_BC = dde.PointSetOperatorBC(integral_points, p_stress*((b+(2*indent_x))/b)*(b*t) , integral_stress) #stress at clamp --> scaled to stress at ROI --> times width times thickness
+
+bcs = [Integral_BC]
+
+# bcs = []
+# =============================================================================
 # 5. Setup Measurement Data Based on Type (Displacement, Strain, DIC)
 # =============================================================================
 args.num_measurments = int(np.sqrt(args.num_measurments))**2
@@ -185,7 +215,7 @@ if args.measurments_type == "displacement":
                                           lambda x, f, x_np: f[0][:, 0:1]/DIC_norms[0])
     measure_Uy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2]/DIC_norms[1],
                                           lambda x, f, x_np: f[0][:, 1:2]/DIC_norms[1])
-    bcs = [measure_Ux, measure_Uy]
+    bcs += [measure_Ux, measure_Uy]
 
 elif args.measurments_type == "strain":
     if args.DIC_dataset_path != "no_dataset":
@@ -217,7 +247,7 @@ elif args.measurments_type == "strain":
                                            lambda x, f, x_np: strain_from_output(x, f)[:, 1:2]/DIC_norms[1])
     measure_Exy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 2:3]/DIC_norms[2],
                                            lambda x, f, x_np: strain_from_output(x, f)[:, 2:3]/DIC_norms[2])
-    bcs = [measure_Exx, measure_Eyy, measure_Exy]
+    bcs += [measure_Exx, measure_Eyy, measure_Exy]
 
 else:
     raise ValueError("Invalid measurement type. Choose 'displacement' or 'strain'.")
@@ -229,13 +259,15 @@ else:
     disp_norms = np.mean(np.abs(solution_fn(X_DIC_input)[:, :2]), axis=0)
 args.u_0 = [disp_norms[i] if not args.u_0[i] else args.u_0[i] for i in range(2)]
 
+
+
 # =============================================================================
 # 6. PINN Implementation: Boundary Conditions and PDE Residual
 # =============================================================================
 # Define the domain geometry
 geom = dde.geometry.Rectangle([offs_x, offs_y], [offs_x + x_max_ROI, offs_y+y_max_ROI])
 
-def HardBC(x, f, x_max=offs_x + x_max_ROI):
+def HardBC(x, f, x_max=x_max[0]):
     """
     Apply hard boundary conditions via transformation.
     If x is provided as a list of 1D arrays, transform it to a 2D meshgrid.
@@ -245,7 +277,7 @@ def HardBC(x, f, x_max=offs_x + x_max_ROI):
     Ux  = f[:, 0] * args.u_0[0] 
     Uy  = f[:, 1] * args.u_0[1]
     Sxx = f[:, 2] * (x_max - x[:, 0])/x_max * (x[:,0] - offs_x)/x_max
-    Syy = f[:, 3] 
+    Syy = f[:, 3]
     Sxy = f[:, 4] * (x_max - x[:, 0])/x_max * (x[:,0] - offs_x)/x_max
     return dde.backend.stack((Ux, Uy, Sxx, Syy, Sxy), axis=1)
 
@@ -273,6 +305,8 @@ def pde(x, f, unknowns=params_factor):
     Sxy_x = dde.grad.jacobian(f, x, i=4, j=0)[0]
     Sxy_y = dde.grad.jacobian(f, x, i=4, j=1)[0]
     
+    # momentum_x = (Sxx_x + Sxy_y)*x_max_ROI
+    # momentum_y = (Sxy_x + Syy_y)*y_max_ROI
     momentum_x = Sxx_x + Sxy_y
     momentum_y = Sxy_x + Syy_y
     
@@ -287,9 +321,11 @@ def input_scaling(x):
     Scale the input coordinates to the range [0, 1].
     """
     if isinstance(x, list):
-        return [x_el / L_max for x_el in x]
+        #return [x_el / L_max for x_el in x]
+        return [(x[i]-offsets[i])/ROI[i] for i in range(len(x))]
     else:
-        return x / L_max
+        #TODO
+        return jnp.stack([(x[:,i]-offsets[i])/ROI[i] for i in range(len(x))])
 # =============================================================================
 # 7. Define Neural Network, Data, and Model
 # =============================================================================
@@ -315,6 +351,8 @@ model = dde.Model(data, net)
 model.compile(args.optimizer, lr=args.lr, metrics=["l2 relative error"],
               loss_weights=[1]*len(args.loss_weights), loss=args.loss_fn,
               external_trainable_variables=trainable_variables)
+
+#loss_weights=args.loss_weights, loss=args.loss_fn,
 
 # =============================================================================
 # 8. Setup Callbacks for Logging
@@ -367,7 +405,11 @@ for i, field in enumerate(args.log_output_fields): # Log output fields
 # 9. Calculate Loss Weights based on the Gradient of the Loss Function
 # =============================================================================
 from jax.flatten_util import ravel_pytree
-def loss_function(params,comp=0,inputs=[X_DIC_input]*len(bcs)+[X_plot]):
+
+# def loss_function(params,comp=0,inputs=[X_DIC_input]*len(bcs)+[X_plot]):
+#     return model.outputs_losses_train(params, inputs, None)[1][comp]
+
+def loss_function(params,comp=0,inputs=[integral_points]+[X_DIC_input]*(len(bcs)-1)+[X_plot]):
     return model.outputs_losses_train(params, inputs, None)[1][comp]
 
 n_loss = len(args.loss_weights)

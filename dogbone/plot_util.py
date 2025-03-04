@@ -297,11 +297,21 @@ def plot_field_columns(fig, ax, fields, fields_id, iteration, Xmesh, Ymesh, func
         im_field = plot_field(iteration, fields, field_id, Xmesh, Ymesh, func, ax_field,
                               field_names, plot_exact=False, colormap=colormap)
         ims_field.append(im_field)
+
+        # Manually add a colorbar for the computed field
+        pos = ax_field.get_position()
+        cax_pos = mtransforms.Bbox.from_bounds(pos.x0 + pos.width*0.05, pos.y1 + 0.04,
+                                               pos.width*0.9, 0.01)
+        cax = fig.add_axes(cax_pos)
+        cbfieldc = fig.colorbar(im_field, cax=cax, orientation='horizontal', format=make_formatter())
+        cbfieldc.ax.xaxis.set_ticks_position('top')
         
         # --- Residual plot (bottom row) ---
         ax_res = ax[2][i]
         im_res = plot_field_residual(iteration, fields, field_id, Xmesh, Ymesh, func, ax_res, field_names)
         ims_res.append(im_res)
+
+
         pos = ax_res.get_position()
         cax_pos = mtransforms.Bbox.from_bounds(pos.x0 + pos.width*0.05, pos.y0 - 0.03,
                                                pos.width*0.9, 0.01)

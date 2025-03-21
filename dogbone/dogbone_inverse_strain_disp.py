@@ -36,11 +36,11 @@ def transform_coords(x):
 parser = argparse.ArgumentParser(description="Physics Informed Neural Networks for Linear Elastic Plate")
 parser.add_argument('--n_iter', type=int, default=int(1e10), help='Number of iterations')
 parser.add_argument('--log_every', type=int, default=250, help='Log every n steps')
-parser.add_argument('--available_time', type=int, default=5, help='Available time in minutes')
+parser.add_argument('--available_time', type=int, default=10, help='Available time in minutes')
 parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Exx', 'Eyy', 'Exy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_fn', nargs='+', default='MSE', help='Loss functions')
-parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1,1,1], help='Loss weights (more on DIC points)')
+parser.add_argument('--loss_weights', nargs='+', type=float, default=[1,1,1,1,1,1,1,1,1,1], help='Loss weights (more on DIC points)')
 parser.add_argument('--num_point_PDE', type=int, default=10000, help='Number of collocation points for PDE evaluation')
 parser.add_argument('--num_point_test', type=int, default=100000, help='Number of test points')
 
@@ -51,8 +51,8 @@ parser.add_argument('--optimizer', choices=['adam'], default='adam', help='Optim
 parser.add_argument('--mlp', choices=['mlp', 'modified_mlp'], default='mlp', help='Type of MLP for SPINN')
 parser.add_argument('--initialization', choices=['Glorot uniform', 'He normal'], default='Glorot uniform', help='Initialization method')
 
-parser.add_argument('--measurments_type', choices=['displacement','strain'], default='strain', help='Type of measurements')
-parser.add_argument('--num_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
+parser.add_argument('--measurments_type', choices=['displacement','strain','both'], default='both', help='Type of measurements')
+parser.add_argument('--num_measurments', type=int, default=49, help='Number of measurements (should be a perfect square)')
 parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
@@ -69,7 +69,7 @@ if len(args.log_output_fields[0]) == 0:
     args.log_output_fields = [] # Empty list for no logging
 
 # For strain measurements, extend loss weights
-if args.measurments_type == "strain":
+if args.measurments_type == "strain" or 'both':
     print("STRAIN")
     args.loss_weights.append(args.loss_weights[-1])
 
@@ -96,7 +96,7 @@ total_points_vert = 140 #see geometry mapping code
 total_points_hor = 40
 x_max_FEM = (2*indent_x) + b
 y_max_FEM = 2*H_clamp + 2*indent_y + L_c
-t = 2 #thickness
+t = 1.5 #thickness
 
 #ROI positioning
 offs_x = indent_x
@@ -181,8 +181,7 @@ def integral_stress(inputs, outputs, X):
     Syy = outputs[0][:, 3:4].reshape(x_mesh.shape)
     return jnp.trapezoid(Syy, x_mesh, axis=0)*t
 
-# Integral_BC = dde.PointSetOperatorBC(integral_points, p_stress*((b+(2*indent_x))/b)*(b*t) , integral_stress) #stress at clamp --> scaled to stress at ROI --> times width times thickness
-Integral_BC = dde.PointSetOperatorBC(integral_points, 360 , integral_stress)
+Integral_BC = dde.PointSetOperatorBC(integral_points, p_stress*((b+(2*indent_x))/b)*(b*t) , integral_stress) #stress at clamp --> scaled to stress at ROI --> times width times thickness
 
 bcs = [Integral_BC]
 
@@ -191,87 +190,35 @@ bcs = [Integral_BC]
 # 5. Setup Measurement Data Based on Type (Displacement, Strain, DIC)
 # =============================================================================
 args.num_measurments = int(np.sqrt(args.num_measurments))**2
-if args.measurments_type == "displacement":
-    if args.DIC_dataset_path != "no_dataset":
-        dic_path = os.path.join(dir_path, args.DIC_dataset_path)
-        dic_number = args.DIC_dataset_number
-        X_dic = pd.read_csv(os.path.join(dic_path, "x", f"x_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
-        Y_dic = pd.read_csv(os.path.join(dic_path, "y", f"y_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
-        Ux_dic = pd.read_csv(os.path.join(dic_path, "ux", f"ux_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        Uy_dic = pd.read_csv(os.path.join(dic_path, "uy", f"uy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        DIC_data = np.hstack([Ux_dic, Uy_dic])
-        x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
-        y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
-        X_DIC_input = [x_values, y_values]
-        #DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
-        if args.num_measurments != x_values.shape[0] * y_values.shape[0]:
-            print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
-            args.num_measurments = x_values.shape[0] * y_values.shape[0]
-    else:
-        # X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
-        #        np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        # DIC_data = solution_fn(X_DIC_input)[:, :2]
-        # DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-        X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        X_DIC_input_ref = [np.linspace(0, 20, args.num_measurments).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        DIC_data = solution_fn(X_DIC_input_ref)[:, :2]
-        DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-
-    DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
-    measure_Ux = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1]/DIC_norms[0],
+#displacement
+X_DIC_input_disp = [np.linspace(offs_x, offs_x + x_max_ROI, 3).reshape(-1, 1),
+               np.linspace(offs_y, offs_y + y_max_ROI, 3).reshape(-1, 1)]
+DIC_data = solution_fn(X_DIC_input_disp)[:, :2]
+DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
+DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
+measure_Ux = dde.PointSetOperatorBC(X_DIC_input_disp, DIC_data[:, 0:1]/DIC_norms[0],
                                           lambda x, f, x_np: f[0][:, 0:1]/DIC_norms[0])
-    measure_Uy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2]/DIC_norms[1],
+measure_Uy = dde.PointSetOperatorBC(X_DIC_input_disp, DIC_data[:, 1:2]/DIC_norms[1],
                                           lambda x, f, x_np: f[0][:, 1:2]/DIC_norms[1])
-    bcs += [measure_Ux, measure_Uy]
+bcs += [measure_Ux, measure_Uy]
 
-elif args.measurments_type == "strain":
-    if args.DIC_dataset_path != "no_dataset":
-        dic_path = os.path.join(dir_path, args.DIC_dataset_path)
-        dic_number = args.DIC_dataset_number
-        X_dic = pd.read_csv(os.path.join(dic_path, "x", f"x_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
-        Y_dic = pd.read_csv(os.path.join(dic_path, "y", f"y_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
-        Ux_dic = pd.read_csv(os.path.join(dic_path, "ux", f"ux_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        Uy_dic = pd.read_csv(os.path.join(dic_path, "uy", f"uy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        E_xx_dic = pd.read_csv(os.path.join(dic_path, "exx", f"exx_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        E_yy_dic = pd.read_csv(os.path.join(dic_path, "eyy", f"eyy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        E_xy_dic = pd.read_csv(os.path.join(dic_path, "exy", f"exy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
-        y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
-        X_DIC_input = [x_values, y_values]
-        DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
-        if args.num_measurments != x_values.shape[0] * y_values.shape[0]:
-            print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
-            args.num_measurments = x_values.shape[0] * y_values.shape[0]
-    else:
-        # X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
-        #        np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        # DIC_data = strain_fn(X_DIC_input)
-        # DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-        X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
+#strain
+X_DIC_input_strain = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
                np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        X_DIC_input_ref = [np.linspace(0, 20, args.num_measurments).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        DIC_data = strain_fn(X_DIC_input_ref)
-        DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-    DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
-    measure_Exx = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1]/DIC_norms[0],
+DIC_data = strain_fn(X_DIC_input_strain)
+DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
+DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
+measure_Exx = dde.PointSetOperatorBC(X_DIC_input_strain, DIC_data[:, 0:1]/DIC_norms[0],
                                            lambda x, f, x_np: strain_from_output(x, f)[:, 0:1]/DIC_norms[0])
-    measure_Eyy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 1:2]/DIC_norms[1],
+measure_Eyy = dde.PointSetOperatorBC(X_DIC_input_strain, DIC_data[:, 1:2]/DIC_norms[1],
                                            lambda x, f, x_np: strain_from_output(x, f)[:, 1:2]/DIC_norms[1])
-    measure_Exy = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 2:3]/DIC_norms[2],
+measure_Exy = dde.PointSetOperatorBC(X_DIC_input_strain, DIC_data[:, 2:3]/DIC_norms[2],
                                            lambda x, f, x_np: strain_from_output(x, f)[:, 2:3]/DIC_norms[2])
-    bcs += [measure_Exx, measure_Eyy, measure_Exy]
+bcs += [measure_Exx, measure_Eyy, measure_Exy]
 
-else:
-    raise ValueError("Invalid measurement type. Choose 'displacement' or 'strain'.")
 
-# Use measurements norm as the default scaling factor
-if args.DIC_dataset_path != "no_dataset":
-    disp_norms = np.mean(np.abs(np.hstack([Ux_dic, Uy_dic])), axis=0)
-else:
-    disp_norms = np.mean(np.abs(solution_fn(X_DIC_input_ref)[:, :2]), axis=0)
+
+disp_norms = np.mean(np.abs(solution_fn(X_DIC_input_disp)[:, :2]), axis=0)
 args.u_0 = [disp_norms[i] if not args.u_0[i] else args.u_0[i] for i in range(2)]
 
 
@@ -424,7 +371,7 @@ from jax.flatten_util import ravel_pytree
 # def loss_function(params,comp=0,inputs=[X_DIC_input]*len(bcs)+[X_plot]):
 #     return model.outputs_losses_train(params, inputs, None)[1][comp]
 
-def loss_function(params,comp=0,inputs=[integral_points]+[X_DIC_input]*(len(bcs)-1)+[X_plot]):
+def loss_function(params,comp=0,inputs=[integral_points]+[X_DIC_input_disp]*2+[X_DIC_input_strain]*3+[X_plot]):
     return model.outputs_losses_train(params, inputs, None)[1][comp]
 
 n_loss = len(args.loss_weights)

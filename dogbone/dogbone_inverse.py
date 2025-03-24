@@ -58,7 +58,7 @@ parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displac
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 parser.add_argument('--coord_normalization', type=bool, default=False, help='Normalize the input coordinates')
 
-parser.add_argument('--FEM_dataset', type=str, default='fem_solution_dogbone_experiments.dat', help='Path to FEM data')
+parser.add_argument('--FEM_dataset', type=str, default='fem_solution_dogbone_experiments_ROI.dat', help='Path to FEM data')
 parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements')
 parser.add_argument('--DIC_dataset_number', type=int, default=1, help='Only for DIC simulated measurements')
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
@@ -135,8 +135,13 @@ stress_val = data[:, 7:10]
 solution_val = np.hstack((u_val, stress_val))
 
 n_mesh_points = [total_points_hor,total_points_vert]
-x_grid = np.linspace(0, x_max_FEM, n_mesh_points[0])
-y_grid = np.linspace(0, y_max_FEM, n_mesh_points[1])
+# full specimen
+# x_grid = np.linspace(0, x_max_FEM, 40)
+# y_grid = np.linspace(0, y_max_FEM, 140)
+
+#ROI
+x_grid = np.linspace(offs_x, offs_x + x_max_ROI, 40)
+y_grid = np.linspace(offs_y, offs_y + y_max_ROI, 140)
 
 def create_interpolation_fn(data_array):
     num_components = data_array.shape[1]
@@ -214,9 +219,9 @@ if args.measurments_type == "displacement":
         # DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
         X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
                np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        X_DIC_input_ref = [np.linspace(0, 20, args.num_measurments).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        DIC_data = solution_fn(X_DIC_input_ref)[:, :2]
+        # X_DIC_input_ref = [np.linspace(0, 20, args.num_measurments).reshape(-1, 1),
+        #        np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
+        DIC_data = solution_fn(X_DIC_input)[:, :2]
         DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
 
     DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
@@ -251,9 +256,9 @@ elif args.measurments_type == "strain":
         # DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
         X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
                np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        X_DIC_input_ref = [np.linspace(0, 20, args.num_measurments).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        DIC_data = strain_fn(X_DIC_input_ref)
+        # X_DIC_input_ref = [np.linspace(0, 20, args.num_measurments).reshape(-1, 1),
+        #        np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
+        DIC_data = strain_fn(X_DIC_input)
         DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
     DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
     measure_Exx = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1]/DIC_norms[0],
@@ -271,7 +276,7 @@ else:
 if args.DIC_dataset_path != "no_dataset":
     disp_norms = np.mean(np.abs(np.hstack([Ux_dic, Uy_dic])), axis=0)
 else:
-    disp_norms = np.mean(np.abs(solution_fn(X_DIC_input_ref)[:, :2]), axis=0)
+    disp_norms = np.mean(np.abs(solution_fn(X_DIC_input)[:, :2]), axis=0)
 args.u_0 = [disp_norms[i] if not args.u_0[i] else args.u_0[i] for i in range(2)]
 
 
@@ -306,6 +311,7 @@ def pde(x, f, unknowns=params_factor):
     nu = nu_init * param_factors[1]
     lmbd = E * nu / ((1 + nu) * (1 - 2 * nu))
     mu = E / (2 * (1 + nu))
+    lmbd=2*mu*lmbd/(lmbd+(2*mu))
     
     E_xx = dde.grad.jacobian(f, x, i=0, j=0)[0]
     E_yy = dde.grad.jacobian(f, x, i=1, j=1)[0]

@@ -3,6 +3,7 @@ import numpy as np
 import deepxde as dde
 import jax
 import jax.numpy as jnp
+import pandas as pd
 from scipy.interpolate import RegularGridInterpolator
 
 np.set_printoptions(edgeitems=30, linewidth = 1000000)
@@ -36,7 +37,7 @@ nu_actual = 0.33     # Actual Poisson's ratio
 p_stress = 9 #360N/(20mmx2mm)
 
 n_DIC = 10
-noise_DIC = 0
+noise_DIC = 1e-6
 
 def transform_coords(x):
     """
@@ -46,46 +47,122 @@ def transform_coords(x):
     x_mesh = [x_.ravel() for x_ in jnp.meshgrid(x[0].squeeze(), x[1].squeeze(), indexing="ij")]
     return dde.backend.stack(x_mesh, axis=-1)
 
-# Load data
+
+
+
+"""
+REAL DATA
+"""
 dir_path = os.path.dirname(os.path.realpath(__file__))
-fem_file = os.path.join(dir_path, r"data_fem", 'fem_solution_dogbone_experiments.dat')
-data = np.loadtxt(fem_file)
-X_val      = data[:, :2]
-u_val      = data[:, 2:4]
-strain_val = data[:, 4:7]
-stress_val = data[:, 7:10]
-solution_val = np.hstack((u_val, stress_val))
+dic_path = os.path.join(dir_path, "DIC_data")
 
-n_mesh_points = [total_points_hor,total_points_vert]
-x_grid = np.linspace(0, x_max_FEM, n_mesh_points[0])
-y_grid = np.linspace(0, y_max_FEM, n_mesh_points[1])
+X_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
+X_dic = X_dic.replace({',': '.'}, regex=True)
+X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
+X_dic = X_dic.dropna(axis=1)
+X_dic = X_dic.to_numpy()
 
-def create_interpolation_fn(data_array):
-    num_components = data_array.shape[1]
-    interpolators = []
-    for i in range(num_components):
-        interp = RegularGridInterpolator(
-            (x_grid, y_grid),
-            data_array[:, i].reshape(n_mesh_points[1], n_mesh_points[0]).T,
-        )
-        interpolators.append(interp)
-    def interpolation_fn(x):
-        x_in = transform_coords([x[0], x[1]])
-        return np.array([interp((x_in[:, 0], x_in[:, 1])) for interp in interpolators]).T
-    return interpolation_fn
+Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
+Y_dic = Y_dic.replace({',': '.'}, regex=True)
+Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
+Y_dic = Y_dic.dropna(axis=1)
+Y_dic = Y_dic.to_numpy()
 
-solution_fn = create_interpolation_fn(solution_val)
-strain_fn   = create_interpolation_fn(strain_val)
+E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_exx.csv"), delimiter=";",dtype=str)
+E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
+E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
+E_xx_dic = E_xx_dic.dropna(axis=1)
+E_xx_dic = E_xx_dic.to_numpy()
+E_xx_dic = E_xx_dic.reshape(-1,1)
+
+E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_eyy.csv"), delimiter=";",dtype=str)
+E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
+E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
+E_yy_dic = E_yy_dic.dropna(axis=1)
+E_yy_dic = E_yy_dic.to_numpy()
+E_yy_dic = E_yy_dic.reshape(-1,1)
+
+E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_exy.csv"), delimiter=";",dtype=str)
+E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
+E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
+E_xy_dic = E_xy_dic.dropna(axis=1)
+E_xy_dic = E_xy_dic.to_numpy()
+E_xy_dic = E_xy_dic.reshape(-1,1)
 
 
-# Create simulated data
-X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, n_DIC).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
-X_DIC_input_ref = [np.linspace(0, 20, n_DIC).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
-DIC_solution = solution_fn(X_DIC_input_ref)
-DIC_data = strain_fn(X_DIC_input_ref)[:, :3]
-DIC_data += np.random.normal(0, noise_DIC, DIC_data.shape)
+
+#Ux_dic = pd.read_csv(os.path.join(dic_path, "ux", f"ux_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+#Uy_dic = pd.read_csv(os.path.join(dic_path, "uy", f"uy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+# E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_exx.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+# E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_eyy.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+# E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_exy.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+
+
+
+# print(np.mean(X_dic))
+# print(np.mean(Y_dic))
+# print(np.mean(E_xx_dic))
+# print(np.mean(E_yy_dic))
+# print(np.mean(E_xy_dic))
+
+
+
+x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
+y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
+X_DIC_input = [x_values, y_values]
+DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
+
+
+"""
+SIMULATED DATA
+"""
+
+# # Load data
+# dir_path = os.path.dirname(os.path.realpath(__file__))
+# fem_file = os.path.join(dir_path, r"data_fem", 'fem_solution_dogbone_experiments.dat')
+# data = np.loadtxt(fem_file)
+# X_val      = data[:, :2]
+# u_val      = data[:, 2:4]
+# strain_val = data[:, 4:7]
+# stress_val = data[:, 7:10]
+# solution_val = np.hstack((u_val, stress_val))
+
+# n_mesh_points = [total_points_hor,total_points_vert]
+# x_grid = np.linspace(0, x_max_FEM, n_mesh_points[0])
+# y_grid = np.linspace(0, y_max_FEM, n_mesh_points[1])
+
+# def create_interpolation_fn(data_array):
+#     num_components = data_array.shape[1]
+#     interpolators = []
+#     for i in range(num_components):
+#         interp = RegularGridInterpolator(
+#             (x_grid, y_grid),
+#             data_array[:, i].reshape(n_mesh_points[1], n_mesh_points[0]).T,
+#         )
+#         interpolators.append(interp)
+#     def interpolation_fn(x):
+#         x_in = transform_coords([x[0], x[1]])
+#         return np.array([interp((x_in[:, 0], x_in[:, 1])) for interp in interpolators]).T
+#     return interpolation_fn
+
+# solution_fn = create_interpolation_fn(solution_val)
+# strain_fn   = create_interpolation_fn(strain_val)
+
+
+# # Create simulated data
+# X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, n_DIC).reshape(-1, 1),
+#                np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
+# X_DIC_input_ref = [np.linspace(0, 20, n_DIC).reshape(-1, 1),
+#                np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
+# DIC_solution = solution_fn(X_DIC_input_ref)
+# DIC_data = strain_fn(X_DIC_input_ref)[:, :3]
+# DIC_data += np.random.normal(0, noise_DIC, DIC_data.shape)
+
+
+"""
+VFM
+"""
+
 
 # Generate output matrices
 X1, X2 = np.meshgrid(X_DIC_input[0], X_DIC_input[1])
@@ -95,8 +172,10 @@ Eps6 = DIC_data[:,2]
 Eps1 = Eps1.reshape(X1.shape)
 Eps2 = Eps2.reshape(X1.shape)
 Eps6 = Eps6.reshape(X1.shape) # *2? engineering strain
-X1 -= 5
-X2 -= 25
+
+# #Simulated data
+# X1 -= 5
+# X2 -= 25
 
 # print("X1")
 # print(X1)
@@ -110,7 +189,12 @@ X2 -= 25
 # print(Eps6)
 
 # Constants
-F = 360 #MUST CORRESPOND TO PSTRESS FOR SIMULATED DATA!!!!! CHECK FEM FILE
+# #Simumated data
+# F = 360 #MUST CORRESPOND TO PSTRESS FOR SIMULATED DATA!!!!! CHECK FEM FILE
+
+#DIC
+F = 533
+
 t = 2
 w = 10
 h = 60
@@ -168,9 +252,15 @@ print(f'Condition number of A: {cond_A:.6f}')
 print(f'Elastic modulus (E): {E:.6f}')
 print(f'Poisson ratio (Nu): {Nu:.6f}')
 
+rel_err_E = np.abs(E_actual-E)*100/E
+print(f'rel error (E): {rel_err_E:.6f} %')
+rel_err_nu = np.abs(nu_actual-Nu)*100/Nu
+print(f'rel error (Nu): {rel_err_nu:.6f} %')
 
+"""
 Nu = -(np.mean(X2*(X2-h)*Eps1) + np.mean(X1*(2*X2 - h)*Eps6)) / (np.mean(X2*(X2-h)*Eps2) - np.mean(X1*(2*X2 - h)*Eps6))
 print(f'Poisson ratio (Nu): {Nu:.6f}')
 
 E = (1-Nu**2)*F*h/(t*Sd*(np.mean(Eps2) + Nu*np.mean(Eps1)))
 print(f'Elastic modulus (E): {E:.6f}')
+"""

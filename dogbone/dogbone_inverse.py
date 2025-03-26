@@ -56,10 +56,10 @@ parser.add_argument('--num_measurments', type=int, default=16, help='Number of m
 parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
-parser.add_argument('--coord_normalization', type=bool, default=False, help='Normalize the input coordinates')
+parser.add_argument('--coord_normalization', type=bool, default=True, help='Normalize the input coordinates')
 
 parser.add_argument('--FEM_dataset', type=str, default='fem_solution_dogbone_experiments_ROI.dat', help='Path to FEM data')
-parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements')
+parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements -- (DIC_data or no_dataset)')
 parser.add_argument('--DIC_dataset_number', type=int, default=1, help='Only for DIC simulated measurements')
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
 
@@ -113,10 +113,10 @@ x_max = [1.0, 1.0] if args.coord_normalization else x_max_full
 
 E_actual  = 69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
 nu_actual = 0.33     # Actual Poisson's ratio
-E_init    = 50e3   # Initial guess for Young's modulus
-nu_init   = 0.25     # Initial guess for Poisson's ratio
+E_init    = 80e3   # Initial guess for Young's modulus
+nu_init   = 0.40     # Initial guess for Poisson's ratio
 
-p_stress = 9
+p_stress = 9 #FEM reference solution for 360N --> 360N/(2mmx20mm) = 9 MPa
 
 # Create trainable scaling factors (one per parameter)
 params_factor = [dde.Variable(1 / s) for s in args.params_iter_speed]
@@ -186,8 +186,8 @@ def integral_stress(inputs, outputs, X):
     Syy = outputs[0][:, 3:4].reshape(x_mesh.shape)
     return jnp.trapezoid(Syy, x_mesh, axis=0)*t
 
-# Integral_BC = dde.PointSetOperatorBC(integral_points, p_stress*((b+(2*indent_x))/b)*(b*t) , integral_stress) #stress at clamp --> scaled to stress at ROI --> times width times thickness
-Integral_BC = dde.PointSetOperatorBC(integral_points, 360 , integral_stress)
+Integral_BC = dde.PointSetOperatorBC(integral_points, p_stress*((b+(2*indent_x))/b)*(b*t) , integral_stress) #stress at clamp --> scaled to stress at ROI --> times width times thickness
+# Integral_BC = dde.PointSetOperatorBC(integral_points, 450 , integral_stress) #image25
 
 bcs = [Integral_BC]
 
@@ -233,15 +233,57 @@ if args.measurments_type == "displacement":
 
 elif args.measurments_type == "strain":
     if args.DIC_dataset_path != "no_dataset":
-        dic_path = os.path.join(dir_path, args.DIC_dataset_path)
-        dic_number = args.DIC_dataset_number
-        X_dic = pd.read_csv(os.path.join(dic_path, "x", f"x_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
-        Y_dic = pd.read_csv(os.path.join(dic_path, "y", f"y_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
-        Ux_dic = pd.read_csv(os.path.join(dic_path, "ux", f"ux_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        Uy_dic = pd.read_csv(os.path.join(dic_path, "uy", f"uy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        E_xx_dic = pd.read_csv(os.path.join(dic_path, "exx", f"exx_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        E_yy_dic = pd.read_csv(os.path.join(dic_path, "eyy", f"eyy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        E_xy_dic = pd.read_csv(os.path.join(dic_path, "exy", f"exy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
+        print("DIC ##########################")
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        dic_path = os.path.join(dir_path, "DIC_data")
+
+        X_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
+        X_dic = X_dic.replace({',': '.'}, regex=True)
+        X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
+        X_dic = X_dic.dropna(axis=1)
+        X_dic = X_dic.to_numpy()
+        X_dic += offs_x
+
+        Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
+        Y_dic = Y_dic.replace({',': '.'}, regex=True)
+        Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
+        Y_dic = Y_dic.dropna(axis=1)
+        Y_dic = Y_dic.to_numpy()
+        Y_dic += offs_y
+
+        Ux_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_U_trans.csv"), delimiter=";",dtype=str)
+        Ux_dic = Ux_dic.replace({',': '.'}, regex=True)
+        Ux_dic = Ux_dic.apply(pd.to_numeric, errors='coerce')
+        Ux_dic = Ux_dic.dropna(axis=1)
+        Ux_dic = Ux_dic.to_numpy()
+
+        Uy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_V_trans.csv"), delimiter=";",dtype=str)
+        Uy_dic = Uy_dic.replace({',': '.'}, regex=True)
+        Uy_dic = Uy_dic.apply(pd.to_numeric, errors='coerce')
+        Uy_dic = Uy_dic.dropna(axis=1)
+        Uy_dic = Uy_dic.to_numpy()
+
+        E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_exx.csv"), delimiter=";",dtype=str)
+        E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
+        E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
+        E_xx_dic = E_xx_dic.dropna(axis=1)
+        E_xx_dic = E_xx_dic.to_numpy()
+        E_xx_dic = E_xx_dic.reshape(-1,1)
+
+        E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_eyy.csv"), delimiter=";",dtype=str)
+        E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
+        E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
+        E_yy_dic = E_yy_dic.dropna(axis=1)
+        E_yy_dic = E_yy_dic.to_numpy()
+        E_yy_dic = E_yy_dic.reshape(-1,1)
+
+        E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_exy.csv"), delimiter=";",dtype=str)
+        E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
+        E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
+        E_xy_dic = E_xy_dic.dropna(axis=1)
+        E_xy_dic = E_xy_dic.to_numpy()
+        E_xy_dic = E_xy_dic.reshape(-1,1)
+
         x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
         y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
         X_DIC_input = [x_values, y_values]
@@ -311,7 +353,7 @@ def pde(x, f, unknowns=params_factor):
     nu = nu_init * param_factors[1]
     lmbd = E * nu / ((1 + nu) * (1 - 2 * nu))
     mu = E / (2 * (1 + nu))
-    lmbd=2*mu*lmbd/(lmbd+(2*mu))
+    lmbd=2*mu*lmbd/(lmbd+(2*mu)) # plane stress
     
     E_xx = dde.grad.jacobian(f, x, i=0, j=0)[0]
     E_yy = dde.grad.jacobian(f, x, i=1, j=1)[0]
@@ -342,11 +384,12 @@ def input_scaling(x):
     Scale the input coordinates to the range [0, 1].
     """
     if isinstance(x, list):
-        #return [x_el / L_max for x_el in x]
         return [(x[i]-offsets[i])/ROI[i] for i in range(len(x))]
     else:
         #TODO
-        return jnp.stack([(x[:,i]-offsets[i])/ROI[i] for i in range(len(x))])
+        return jnp.array([x[0,0]-offsets[0]/ROI[0], x[0,1]-offsets[1]/ROI[1]])
+        # return jnp.vstack([(x[:,i]-offsets[i])/ROI[i] for i in range(len(x))]) ??? len(x[0]) ???
+        # return(x)
 # =============================================================================
 # 7. Define Neural Network, Data, and Model
 # =============================================================================
@@ -409,6 +452,8 @@ def output_log(x, output, field):
         return strain_from_output(x, output)[:, ['Exx', 'Eyy', 'Exy'].index(field)]
     raise ValueError(f"Invalid field name: {field}")
         
+# X_plot = [np.linspace(offs_x, offs_x + x_max_ROI, n_mesh_points[0]),
+#                np.linspace(offs_y, offs_y + y_max_ROI, n_mesh_points[1])]
 X_plot = [np.linspace(offs_x, offs_x + x_max_ROI, n_mesh_points[0]).reshape(-1, 1),
                np.linspace(offs_y, offs_y + y_max_ROI, n_mesh_points[1]).reshape(-1, 1)]
 for i, field in enumerate(args.log_output_fields): # Log output fields

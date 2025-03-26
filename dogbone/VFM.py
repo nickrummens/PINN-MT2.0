@@ -56,33 +56,33 @@ REAL DATA
 dir_path = os.path.dirname(os.path.realpath(__file__))
 dic_path = os.path.join(dir_path, "DIC_data")
 
-X_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
+X_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
 X_dic = X_dic.replace({',': '.'}, regex=True)
 X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
 X_dic = X_dic.dropna(axis=1)
 X_dic = X_dic.to_numpy()
 
-Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
+Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
 Y_dic = Y_dic.replace({',': '.'}, regex=True)
 Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
 Y_dic = Y_dic.dropna(axis=1)
 Y_dic = Y_dic.to_numpy()
 
-E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_exx.csv"), delimiter=";",dtype=str)
+E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_exx.csv"), delimiter=";",dtype=str)
 E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
 E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
 E_xx_dic = E_xx_dic.dropna(axis=1)
 E_xx_dic = E_xx_dic.to_numpy()
 E_xx_dic = E_xx_dic.reshape(-1,1)
 
-E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_eyy.csv"), delimiter=";",dtype=str)
+E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_eyy.csv"), delimiter=";",dtype=str)
 E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
 E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
 E_yy_dic = E_yy_dic.dropna(axis=1)
 E_yy_dic = E_yy_dic.to_numpy()
 E_yy_dic = E_yy_dic.reshape(-1,1)
 
-E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0030_0.tiff_exy.csv"), delimiter=";",dtype=str)
+E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_exy.csv"), delimiter=";",dtype=str)
 E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
 E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
 E_xy_dic = E_xy_dic.dropna(axis=1)
@@ -193,7 +193,7 @@ Eps6 = Eps6.reshape(X1.shape) # *2? engineering strain
 # F = 360 #MUST CORRESPOND TO PSTRESS FOR SIMULATED DATA!!!!! CHECK FEM FILE
 
 #DIC
-F = 533
+F = 450 #image 25
 
 t = 2
 w = 10
@@ -210,6 +210,8 @@ Sd = h*w
 print(np.mean(Eps1))
 print(np.mean(Eps2))
 print(np.mean(Eps6))
+print(X1[:,-1])
+print(X2[0,:])
 
 
 
@@ -225,11 +227,11 @@ A[0, 0] = np.mean(Eps2) * Sd
 A[0, 1] = np.mean(Eps1) * Sd
 
 #Field 1.1: u1 = x2(x2 - h)x1
-A[1, 0] = (np.mean( ( Eps1 * X2 * (X2-h) )) * Sd) + (np.mean( Eps6 * ( ( 2 * X2 ) - h ) * X1) * Sd)
-A[1, 1] = (np.mean( ( Eps2 * X2 * (X2-h) ) ) * Sd) - (np.mean( Eps6 * ( ( 2 * X2 ) - h ) * X1 ) * Sd)
+# A[1, 0] = (np.mean( ( Eps1 * X2 * (X2-h) )) * Sd) + (np.mean( Eps6 * ( ( 2 * X2 ) - h ) * X1) * Sd)
+# A[1, 1] = (np.mean( ( Eps2 * X2 * (X2-h) ) ) * Sd) - (np.mean( Eps6 * ( ( 2 * X2 ) - h ) * X1 ) * Sd)
 
-# A[1, 0] = np.mean(Eps1)
-# A[1, 1] = np.mean(Eps2)
+A[1, 0] = np.mean(Eps1)
+A[1, 1] = np.mean(Eps2)
 
 # Calculation of the virtual work of the external forces
 B = np.zeros(2)

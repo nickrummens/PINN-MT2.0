@@ -53,7 +53,7 @@ parser.add_argument('--initialization', choices=['Glorot uniform', 'He normal'],
 
 parser.add_argument('--measurments_type', choices=['displacement','strain'], default='strain', help='Type of measurements')
 parser.add_argument('--num_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
-parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude (not for DIC simulated)')
+parser.add_argument('--noise_magnitude', type=float, default=1e-4, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 parser.add_argument('--coord_normalization', type=bool, default=True, help='Normalize the input coordinates')

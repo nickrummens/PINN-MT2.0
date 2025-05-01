@@ -28,7 +28,7 @@ def flatten_args(args):
 # 1 5min run for strain with noise
 #args["DIC_dataset_path"] = f"2_noise_study/data_dic/{camera_resolution}/1noise"
 #args["DIC_dataset_number"] = 1
-args["results_path"] = r"noise_study/results/artificial_strain_1e-4"
+args["results_path"] = r"noise_study/results/artificial_strain_1e-04"
 # args["measurments_type"] = "strain"
 # args["available_time"] = 3
 
@@ -43,7 +43,7 @@ except subprocess.CalledProcessError as e:
 #5 runs for displacement and strain without noise
 #args["DIC_dataset_path"] = f"2_noise_study/data_dic/{camera_resolution}/0noise"
 #args["DIC_dataset_number"] = 1 # 0 is reference image
-args["results_path"] = r"noise_study/results/artificial_strain_1e-4"
+args["results_path"] = r"noise_study/results/artificial_strain_1e-04"
 # args["available_time"] = 3
 for run in range(5):
     if run == 0: # log all fields for the first run

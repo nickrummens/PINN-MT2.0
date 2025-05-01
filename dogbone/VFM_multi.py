@@ -144,92 +144,98 @@ solution_fn = create_interpolation_fn(solution_val)
 strain_fn   = create_interpolation_fn(strain_val)
 
 
-# Create simulated data
-X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, n_DIC).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
-X_DIC_input_ref = [np.linspace(0, 20, n_DIC).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
-DIC_solution = solution_fn(X_DIC_input_ref)
-DIC_data = strain_fn(X_DIC_input_ref)[:, :3]
-DIC_data += np.random.normal(0, noise_DIC, DIC_data.shape)
-
-
 """
 VFM
 """
+n_runs = 5
+E_results = np.zeros(n_runs)
+nu_results = np.zeros(n_runs)
+E_error_results = np.zeros(n_runs)
+nu_error_results = np.zeros(n_runs)
+for i in range(n_runs):
+    # Create simulated data
+    X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, n_DIC).reshape(-1, 1),
+                np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
+    X_DIC_input_ref = [np.linspace(0, 20, n_DIC).reshape(-1, 1),
+                np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
+    DIC_solution = solution_fn(X_DIC_input_ref)
+    DIC_data = strain_fn(X_DIC_input_ref)[:, :3]
+    DIC_data += np.random.normal(0, noise_DIC, DIC_data.shape)
+
+    # Generate output matrices
+    X1, X2 = np.meshgrid(X_DIC_input[0], X_DIC_input[1])
+    Eps1= DIC_data[:,0]
+    Eps2 = DIC_data[:,1]
+    Eps6 = DIC_data[:,2]
+    Eps1 = Eps1.reshape(X1.shape)
+    Eps2 = Eps2.reshape(X1.shape)
+    Eps6 = Eps6.reshape(X1.shape) # *2? engineering strain
+
+    # #Simulated data
+    # X1 -= 5
+    # X2 -= 25
 
 
-# Generate output matrices
-X1, X2 = np.meshgrid(X_DIC_input[0], X_DIC_input[1])
-Eps1= DIC_data[:,0]
-Eps2 = DIC_data[:,1]
-Eps6 = DIC_data[:,2]
-Eps1 = Eps1.reshape(X1.shape)
-Eps2 = Eps2.reshape(X1.shape)
-Eps6 = Eps6.reshape(X1.shape) # *2? engineering strain
+    # Constants
+    #Simumated data
+    F = 360 #MUST CORRESPOND TO PSTRESS FOR SIMULATED DATA!!!!! CHECK FEM FILE
 
-# #Simulated data
-# X1 -= 5
-# X2 -= 25
+    #DIC
+    # F = 450 #image 25
 
+    t = 2
+    w = 10
+    h = 60
+    Sd = h*w
 
-# Constants
-#Simumated data
-F = 360 #MUST CORRESPOND TO PSTRESS FOR SIMULATED DATA!!!!! CHECK FEM FILE
+    print(np.mean(Eps1))
+    print(np.mean(Eps2))
+    print(np.mean(Eps6))
+    print(X1[:,-1])
+    print(X2[0,:])
 
-#DIC
-# F = 450 #image 25
-
-t = 2
-w = 10
-h = 60
-Sd = h*w
-
-print(np.mean(Eps1))
-print(np.mean(Eps2))
-print(np.mean(Eps6))
-print(X1[:,-1])
-print(X2[0,:])
-
-"""CALCULATION"""
-# Calculation of the components of matrix A
+    """CALCULATION"""
+    # Calculation of the components of matrix A
 
 
-A = np.zeros((2, 2))
+    A = np.zeros((2, 2))
 
-#Field 1.2: u2 = x2
-A[0, 0] = np.mean(Eps2) * Sd
-A[0, 1] = np.mean(Eps1) * Sd
+    #Field 1.2: u2 = x2
+    A[0, 0] = np.mean(Eps2) * Sd
+    A[0, 1] = np.mean(Eps1) * Sd
 
-#Field 1.1: u1 = x2(x2 - h)x1
-# A[1, 0] = (np.mean( ( Eps1 * X2 * (X2-h) )) * Sd) + (np.mean( Eps6 * ( ( 2 * X2 ) - h ) * X1) * Sd)
-# A[1, 1] = (np.mean( ( Eps2 * X2 * (X2-h) ) ) * Sd) - (np.mean( Eps6 * ( ( 2 * X2 ) - h ) * X1 ) * Sd)
+    #Field 1.1: u1 = x2(x2 - h)x1
+    # A[1, 0] = (np.mean( ( Eps1 * X2 * (X2-h) )) * Sd) + (np.mean( Eps6 * ( ( 2 * X2 ) - h ) * X1) * Sd)
+    # A[1, 1] = (np.mean( ( Eps2 * X2 * (X2-h) ) ) * Sd) - (np.mean( Eps6 * ( ( 2 * X2 ) - h ) * X1 ) * Sd)
 
-A[1, 0] = np.mean(Eps1)
-A[1, 1] = np.mean(Eps2)
+    A[1, 0] = np.mean(Eps1)
+    A[1, 1] = np.mean(Eps2)
 
-# Calculation of the virtual work of the external forces
-B = np.zeros(2)
-B[0] = F*h/t 
-B[1] = 0  
+    # Calculation of the virtual work of the external forces
+    B = np.zeros(2)
+    B[0] = F*h/t 
+    B[1] = 0  
 
-# Identification of the stiffness components
-# Q = np.linalg.solve(A, B)
-Q = np.linalg.inv(A) @ B.T
+    # Identification of the stiffness components
+    # Q = np.linalg.solve(A, B)
+    Q = np.linalg.inv(A) @ B.T
 
-# E and Nu from Q
-Nu = Q[1] / Q[0]
-E = Q[0] * (1 - Nu**2)
+    # E and Nu from Q
+    Nu = Q[1] / Q[0]
+    E = Q[0] * (1 - Nu**2)
 
-# Compute the condition number of A
-cond_A = np.linalg.cond(A)
-print(f'Condition number of A: {cond_A:.6f}')
+    E_results[i] = E
+    nu_results[i] = Nu
 
-# Display the result
-print(f'Elastic modulus (E): {E:.6f}')
-print(f'Poisson ratio (Nu): {Nu:.6f}')
+    rel_err_E = np.abs(E_actual-E)*100/E
+    print(f'rel error (E): {rel_err_E:.6f} %')
+    rel_err_nu = np.abs(nu_actual-Nu)*100/Nu
+    print(f'rel error (Nu): {rel_err_nu:.6f} %')
 
-rel_err_E = np.abs(E_actual-E)*100/E
-print(f'rel error (E): {rel_err_E:.6f} %')
-rel_err_nu = np.abs(nu_actual-Nu)*100/Nu
-print(f'rel error (Nu): {rel_err_nu:.6f} %')
+    E_error_results[i] = np.abs(E_actual-E)*100/E
+    nu_error_results[i] = np.abs(nu_actual-Nu)*100/Nu
+
+print(E_results)
+print(nu_results)
+print(E_error_results)
+print(nu_error_results)

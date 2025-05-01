@@ -36,7 +36,7 @@ def transform_coords(x):
 parser = argparse.ArgumentParser(description="Physics Informed Neural Networks for Linear Elastic Plate")
 parser.add_argument('--n_iter', type=int, default=int(1e10), help='Number of iterations')
 parser.add_argument('--log_every', type=int, default=250, help='Log every n steps')
-parser.add_argument('--available_time', type=int, default=5, help='Available time in minutes')
+parser.add_argument('--available_time', type=int, default=4, help='Available time in minutes')
 parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Exx', 'Eyy', 'Exy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_fn', nargs='+', default='MSE', help='Loss functions')
@@ -56,7 +56,7 @@ parser.add_argument('--num_measurments', type=int, default=16, help='Number of m
 parser.add_argument('--noise_magnitude', type=float, default=1e-4, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
-parser.add_argument('--coord_normalization', type=bool, default=True, help='Normalize the input coordinates')
+parser.add_argument('--coord_normalization', type=bool, default=False, help='Normalize the input coordinates')
 
 parser.add_argument('--FEM_dataset', type=str, default='fem_solution_dogbone_experiments_ROI.dat', help='Path to FEM data')
 parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements -- (DIC_data or no_dataset)')
@@ -113,8 +113,8 @@ x_max = [1.0, 1.0] if args.coord_normalization else x_max_full
 
 E_actual  = 69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
 nu_actual = 0.33     # Actual Poisson's ratio
-E_init    = 80e3   # Initial guess for Young's modulus
-nu_init   = 0.40     # Initial guess for Poisson's ratio
+E_init    = 20e3   # Initial guess for Young's modulus
+nu_init   = 0.15     # Initial guess for Poisson's ratio
 
 p_stress = 9 #FEM reference solution for 360N --> 360N/(2mmx20mm) = 9 MPa
 

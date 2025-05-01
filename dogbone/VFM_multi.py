@@ -41,14 +41,14 @@ x_max_ROI = b
 y_max_ROI = L_u
 
 
-E_actual  = 69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
+E_actual  = 69.0   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
 nu_actual = 0.33     # Actual Poisson's ratio
 
 
 p_stress = 9 #360N/(20mmx2mm)
 
 n_DIC = 4
-noise_DIC = 1e-6
+noise_DIC = 1e-4
 
 def transform_coords(x):
     """
@@ -147,7 +147,7 @@ strain_fn   = create_interpolation_fn(strain_val)
 """
 VFM
 """
-n_runs = 5
+n_runs = 100
 E_results = np.zeros(n_runs)
 nu_results = np.zeros(n_runs)
 E_error_results = np.zeros(n_runs)
@@ -224,13 +224,13 @@ for i in range(n_runs):
     Nu = Q[1] / Q[0]
     E = Q[0] * (1 - Nu**2)
 
-    E_results[i] = E
+    E_results[i] = E/1000
     nu_results[i] = Nu
 
     rel_err_E = np.abs(E_actual-E)*100/E
-    print(f'rel error (E): {rel_err_E:.6f} %')
+    # print(f'rel error (E): {rel_err_E:.6f} %')
     rel_err_nu = np.abs(nu_actual-Nu)*100/Nu
-    print(f'rel error (Nu): {rel_err_nu:.6f} %')
+    # print(f'rel error (Nu): {rel_err_nu:.6f} %')
 
     E_error_results[i] = np.abs(E_actual-E)*100/E
     nu_error_results[i] = np.abs(nu_actual-Nu)*100/Nu
@@ -239,3 +239,9 @@ print(E_results)
 print(nu_results)
 print(E_error_results)
 print(nu_error_results)
+
+print("-"*15*6) 
+print(f"{'Parameter':<15}{'Result (mean ± std)':<25}{'Reference':<15}{'Rel. Error':<25}")
+print("-"*15*6)
+print(f"{'E':<15}{f'{np.mean(E_results):.4f} ± {np.std(E_results):.4f}':<25}{E_actual:<15.4f}{f'{np.mean(np.abs(E_results - E_actual)/E_actual)*100:.4f} ± {np.std(np.abs(E_results - E_actual)/E_actual)*100:.4f} %':<25}")
+print(f"{'nu':<15}{f'{np.mean(nu_results):.4f} ± {np.std(nu_results):.4f}':<25}{nu_actual:<15.4f}{f'{np.mean(np.abs(nu_results - nu_actual)/nu_actual)*100:.4f} ± {np.std(np.abs(nu_results - nu_actual)/nu_actual)*100:.4f} %':<25}")

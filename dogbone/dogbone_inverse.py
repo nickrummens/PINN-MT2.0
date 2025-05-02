@@ -36,7 +36,7 @@ def transform_coords(x):
 parser = argparse.ArgumentParser(description="Physics Informed Neural Networks for Linear Elastic Plate")
 parser.add_argument('--n_iter', type=int, default=int(1e10), help='Number of iterations')
 parser.add_argument('--log_every', type=int, default=250, help='Log every n steps')
-parser.add_argument('--available_time', type=int, default=4, help='Available time in minutes')
+parser.add_argument('--available_time', type=int, default=3, help='Available time in minutes')
 parser.add_argument('--log_output_fields', nargs='*', default=['Ux', 'Uy', 'Exx', 'Eyy', 'Exy', 'Sxx', 'Syy', 'Sxy'], help='Fields to log')
 parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
 parser.add_argument('--loss_fn', nargs='+', default='MSE', help='Loss functions')
@@ -59,7 +59,7 @@ parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1],
 parser.add_argument('--coord_normalization', type=bool, default=False, help='Normalize the input coordinates')
 
 parser.add_argument('--FEM_dataset', type=str, default='fem_solution_dogbone_experiments_ROI.dat', help='Path to FEM data')
-parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements -- (DIC_data or no_dataset)')
+parser.add_argument('--DIC_dataset_path', type=str, default='DIC_data', help='If default no_dataset, use FEM model for measurements -- (DIC_data or no_dataset)')
 parser.add_argument('--DIC_dataset_number', type=int, default=1, help='Only for DIC simulated measurements')
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
 
@@ -237,51 +237,79 @@ elif args.measurments_type == "strain":
         dir_path = os.path.dirname(os.path.realpath(__file__))
         dic_path = os.path.join(dir_path, "DIC_data")
 
-        X_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
+        X_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv"), delimiter=";",dtype=str)
         X_dic = X_dic.replace({',': '.'}, regex=True)
         X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
         X_dic = X_dic.dropna(axis=1)
         X_dic = X_dic.to_numpy()
         X_dic += offs_x
 
-        Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
+        Y_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_Y_trans.csv"), delimiter=";",dtype=str)
         Y_dic = Y_dic.replace({',': '.'}, regex=True)
         Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
         Y_dic = Y_dic.dropna(axis=1)
         Y_dic = Y_dic.to_numpy()
-        Y_dic += offs_y
 
-        Ux_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_U_trans.csv"), delimiter=";",dtype=str)
+        Ux_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_U_trans.csv"), delimiter=";",dtype=str)
         Ux_dic = Ux_dic.replace({',': '.'}, regex=True)
         Ux_dic = Ux_dic.apply(pd.to_numeric, errors='coerce')
         Ux_dic = Ux_dic.dropna(axis=1)
         Ux_dic = Ux_dic.to_numpy()
 
-        Uy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_V_trans.csv"), delimiter=";",dtype=str)
+        Uy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_V_trans.csv"), delimiter=";",dtype=str)
         Uy_dic = Uy_dic.replace({',': '.'}, regex=True)
         Uy_dic = Uy_dic.apply(pd.to_numeric, errors='coerce')
         Uy_dic = Uy_dic.dropna(axis=1)
         Uy_dic = Uy_dic.to_numpy()
 
-        E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_exx.csv"), delimiter=";",dtype=str)
+        E_xx_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exx.csv"), delimiter=";",dtype=str)
         E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
         E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
         E_xx_dic = E_xx_dic.dropna(axis=1)
         E_xx_dic = E_xx_dic.to_numpy()
-        E_xx_dic = E_xx_dic.reshape(-1,1)
 
-        E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_eyy.csv"), delimiter=";",dtype=str)
+        E_yy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_eyy.csv"), delimiter=";",dtype=str)
         E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
         E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
         E_yy_dic = E_yy_dic.dropna(axis=1)
         E_yy_dic = E_yy_dic.to_numpy()
-        E_yy_dic = E_yy_dic.reshape(-1,1)
 
-        E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_exy.csv"), delimiter=";",dtype=str)
+        E_xy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exy.csv"), delimiter=";",dtype=str)
         E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
         E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
         E_xy_dic = E_xy_dic.dropna(axis=1)
         E_xy_dic = E_xy_dic.to_numpy()
+
+        rows_in_range_y = []
+        rows_in_range_x = []
+        rows_in_range_ux = []
+        rows_in_range_uy = []
+        rows_in_range_exx = []
+        rows_in_range_eyy = []
+        rows_in_range_exy = []
+
+        for row_y, row_x, row_ux, row_uy, row_exx, row_eyy, row_exy in zip(Y_dic, X_dic, Ux_dic, Uy_dic, E_xx_dic, E_yy_dic, E_xy_dic):
+            for value in row_y:
+                if 25 <= value <= 85:
+                    rows_in_range_y.append(row_y)
+                    rows_in_range_x.append(row_x)
+                    rows_in_range_ux.append(row_ux)
+                    rows_in_range_uy.append(row_uy)
+                    rows_in_range_exx.append(row_exx)
+                    rows_in_range_eyy.append(row_eyy)
+                    rows_in_range_exy.append(row_exy)
+                    break
+        Y_dic = np.array(rows_in_range_y)
+        X_dic = np.array(rows_in_range_x)
+        Ux_dic = np.array(rows_in_range_ux)
+        Uy_dic = np.array(rows_in_range_uy)
+        E_xx_dic = np.array(rows_in_range_exx)
+        E_yy_dic = np.array(rows_in_range_eyy)
+        E_xy_dic = np.array(rows_in_range_exy)
+
+
+        E_xx_dic = E_xx_dic.reshape(-1,1)
+        E_yy_dic = E_yy_dic.reshape(-1,1)
         E_xy_dic = E_xy_dic.reshape(-1,1)
 
         x_values = np.mean(X_dic, axis=0).reshape(-1, 1)

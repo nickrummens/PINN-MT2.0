@@ -64,94 +64,121 @@ def transform_coords(x):
 """
 REAL DATA
 """
-# dir_path = os.path.dirname(os.path.realpath(__file__))
-# dic_path = os.path.join(dir_path, "DIC_data")
+dir_path = os.path.dirname(os.path.realpath(__file__))
+dic_path = os.path.join(dir_path, "DIC_data")
 
-# X_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
-# X_dic = X_dic.replace({',': '.'}, regex=True)
-# X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
-# X_dic = X_dic.dropna(axis=1)
-# X_dic = X_dic.to_numpy()
+X_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv"), delimiter=";",dtype=str)
+X_dic = X_dic.replace({',': '.'}, regex=True)
+X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
+X_dic = X_dic.dropna(axis=1)
+X_dic = X_dic.to_numpy()
 
-# Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
-# Y_dic = Y_dic.replace({',': '.'}, regex=True)
-# Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
-# Y_dic = Y_dic.dropna(axis=1)
-# Y_dic = Y_dic.to_numpy()
+Y_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_Y_trans.csv"), delimiter=";",dtype=str)
+Y_dic = Y_dic.replace({',': '.'}, regex=True)
+Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
+Y_dic = Y_dic.dropna(axis=1)
+Y_dic = Y_dic.to_numpy()
 
-# E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_exx.csv"), delimiter=";",dtype=str)
-# E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
-# E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
-# E_xx_dic = E_xx_dic.dropna(axis=1)
-# E_xx_dic = E_xx_dic.to_numpy()
+E_xx_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exx.csv"), delimiter=";",dtype=str)
+E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
+E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
+E_xx_dic = E_xx_dic.dropna(axis=1)
+E_xx_dic = E_xx_dic.to_numpy()
 # E_xx_dic = E_xx_dic.reshape(-1,1)
 
-# E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_eyy.csv"), delimiter=";",dtype=str)
-# E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
-# E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
-# E_yy_dic = E_yy_dic.dropna(axis=1)
-# E_yy_dic = E_yy_dic.to_numpy()
+
+E_yy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_eyy.csv"), delimiter=";",dtype=str)
+E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
+E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
+E_yy_dic = E_yy_dic.dropna(axis=1)
+E_yy_dic = E_yy_dic.to_numpy()
 # E_yy_dic = E_yy_dic.reshape(-1,1)
 
-# E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0025_0.tiff_exy.csv"), delimiter=";",dtype=str)
-# E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
-# E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
-# E_xy_dic = E_xy_dic.dropna(axis=1)
-# E_xy_dic = E_xy_dic.to_numpy()
+
+E_xy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exy.csv"), delimiter=";",dtype=str)
+E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
+E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
+E_xy_dic = E_xy_dic.dropna(axis=1)
+E_xy_dic = E_xy_dic.to_numpy()
 # E_xy_dic = E_xy_dic.reshape(-1,1)
 
+rows_in_range_y = []
+rows_in_range_x = []
+rows_in_range_exx = []
+rows_in_range_eyy = []
+rows_in_range_exy = []
+
+for row_y, row_x, row_exx, row_eyy, row_exy in zip(Y_dic, X_dic, E_xx_dic, E_yy_dic, E_xy_dic):
+    for value in row_y:
+        if 25 <= value <= 85:
+            rows_in_range_y.append(row_y)
+            rows_in_range_x.append(row_x)
+            rows_in_range_exx.append(row_exx)
+            rows_in_range_eyy.append(row_eyy)
+            rows_in_range_exy.append(row_exy)
+            break
+Y_dic = np.array(rows_in_range_y)[::20, ::5]
+X_dic = np.array(rows_in_range_x)[::20, ::5]
+E_xx_dic = np.array(rows_in_range_exx)[::20, ::5]
+E_yy_dic = np.array(rows_in_range_eyy)[::20, ::5]
+E_xy_dic = np.array(rows_in_range_exy)[::20, ::5]
 
 
-# x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
-# y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
-# X_DIC_input = [x_values, y_values]
-# DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
+print(Y_dic.shape)
 
+E_xx_dic = E_xx_dic.reshape(-1,1)
+E_yy_dic = E_yy_dic.reshape(-1,1)
+E_xy_dic = E_xy_dic.reshape(-1,1)
+
+x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
+y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
+X_DIC_input = [x_values, y_values]
+DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
 
 """
 SIMULATED DATA
 """
 
-# Load data
-dir_path = os.path.dirname(os.path.realpath(__file__))
-fem_file = os.path.join(dir_path, r"data_fem", 'fem_solution_dogbone_experiments.dat')
-data = np.loadtxt(fem_file)
-X_val      = data[:, :2]
-u_val      = data[:, 2:4]
-strain_val = data[:, 4:7]
-stress_val = data[:, 7:10]
-solution_val = np.hstack((u_val, stress_val))
+# # Load data
+# dir_path = os.path.dirname(os.path.realpath(__file__))
+# fem_file = os.path.join(dir_path, r"data_fem", 'fem_solution_dogbone_experiments.dat')
+# data = np.loadtxt(fem_file)
+# X_val      = data[:, :2]
+# u_val      = data[:, 2:4]
+# strain_val = data[:, 4:7]
+# stress_val = data[:, 7:10]
+# solution_val = np.hstack((u_val, stress_val))
 
-n_mesh_points = [total_points_hor,total_points_vert]
-x_grid = np.linspace(0, x_max_FEM, n_mesh_points[0])
-y_grid = np.linspace(0, y_max_FEM, n_mesh_points[1])
+# n_mesh_points = [total_points_hor,total_points_vert]
+# x_grid = np.linspace(0, x_max_FEM, n_mesh_points[0])
+# y_grid = np.linspace(0, y_max_FEM, n_mesh_points[1])
 
-def create_interpolation_fn(data_array):
-    num_components = data_array.shape[1]
-    interpolators = []
-    for i in range(num_components):
-        interp = RegularGridInterpolator(
-            (x_grid, y_grid),
-            data_array[:, i].reshape(n_mesh_points[1], n_mesh_points[0]).T,
-        )
-        interpolators.append(interp)
-    def interpolation_fn(x):
-        x_in = transform_coords([x[0], x[1]])
-        return np.array([interp((x_in[:, 0], x_in[:, 1])) for interp in interpolators]).T
-    return interpolation_fn
+# def create_interpolation_fn(data_array):
+#     num_components = data_array.shape[1]
+#     interpolators = []
+#     for i in range(num_components):
+#         interp = RegularGridInterpolator(
+#             (x_grid, y_grid),
+#             data_array[:, i].reshape(n_mesh_points[1], n_mesh_points[0]).T,
+#         )
+#         interpolators.append(interp)
+#     def interpolation_fn(x):
+#         x_in = transform_coords([x[0], x[1]])
+#         return np.array([interp((x_in[:, 0], x_in[:, 1])) for interp in interpolators]).T
+#     return interpolation_fn
 
-solution_fn = create_interpolation_fn(solution_val)
-strain_fn   = create_interpolation_fn(strain_val)
+# solution_fn = create_interpolation_fn(solution_val)
+# strain_fn   = create_interpolation_fn(strain_val)
 
 
-# Create simulated data
-X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, n_DIC).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
-X_DIC_input_ref = [np.linspace(0, 20, n_DIC).reshape(-1, 1),
-               np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
-DIC_solution = solution_fn(X_DIC_input_ref)
-DIC_data = strain_fn(X_DIC_input_ref)[:, :3]
-DIC_data += np.random.normal(0, noise_DIC, DIC_data.shape)
+# # Create simulated data
+# X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, n_DIC).reshape(-1, 1),
+#                np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
+# X_DIC_input_ref = [np.linspace(0, 20, n_DIC).reshape(-1, 1),
+#                np.linspace(offs_y, offs_y + y_max_ROI, n_DIC).reshape(-1, 1)]
+# DIC_solution = solution_fn(X_DIC_input_ref)
+# DIC_data = strain_fn(X_DIC_input_ref)[:, :3]
+# DIC_data += np.random.normal(0, noise_DIC, DIC_data.shape)
 
 
 """
@@ -185,11 +212,11 @@ w = 10
 h = 60
 Sd = h*w
 
-print(np.mean(Eps1))
-print(np.mean(Eps2))
-print(np.mean(Eps6))
-print(X1[:,-1])
-print(X2[0,:])
+# print(np.mean(Eps1))
+# print(np.mean(Eps2))
+# print(np.mean(Eps6))
+# print(X1[:,-1])
+# print(X2[0,:])
 
 """CALCULATION"""
 # Calculation of the components of matrix A

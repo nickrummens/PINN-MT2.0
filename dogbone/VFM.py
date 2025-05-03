@@ -67,19 +67,24 @@ REAL DATA
 dir_path = os.path.dirname(os.path.realpath(__file__))
 dic_path = os.path.join(dir_path, "DIC_data")
 
-X_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv"), delimiter=";",dtype=str)
+# SIMULATED DIC: speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv etc.
+# REAL-WORLD DIC: Image_0020_0.tiff_X_trans.csv
+
+X_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
 X_dic = X_dic.replace({',': '.'}, regex=True)
 X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
 X_dic = X_dic.dropna(axis=1)
 X_dic = X_dic.to_numpy()
+X_dic += 5
 
-Y_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_Y_trans.csv"), delimiter=";",dtype=str)
+Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
 Y_dic = Y_dic.replace({',': '.'}, regex=True)
 Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
 Y_dic = Y_dic.dropna(axis=1)
 Y_dic = Y_dic.to_numpy()
+Y_dic += 25
 
-E_xx_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exx.csv"), delimiter=";",dtype=str)
+E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_exx.csv"), delimiter=";",dtype=str)
 E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
 E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
 E_xx_dic = E_xx_dic.dropna(axis=1)
@@ -87,7 +92,7 @@ E_xx_dic = E_xx_dic.to_numpy()
 # E_xx_dic = E_xx_dic.reshape(-1,1)
 
 
-E_yy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_eyy.csv"), delimiter=";",dtype=str)
+E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_eyy.csv"), delimiter=";",dtype=str)
 E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
 E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
 E_yy_dic = E_yy_dic.dropna(axis=1)
@@ -95,33 +100,39 @@ E_yy_dic = E_yy_dic.to_numpy()
 # E_yy_dic = E_yy_dic.reshape(-1,1)
 
 
-E_xy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exy.csv"), delimiter=";",dtype=str)
+E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_exy.csv"), delimiter=";",dtype=str)
 E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
 E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
 E_xy_dic = E_xy_dic.dropna(axis=1)
 E_xy_dic = E_xy_dic.to_numpy()
 # E_xy_dic = E_xy_dic.reshape(-1,1)
 
-rows_in_range_y = []
-rows_in_range_x = []
-rows_in_range_exx = []
-rows_in_range_eyy = []
-rows_in_range_exy = []
+# rows_in_range_y = []
+# rows_in_range_x = []
+# rows_in_range_exx = []
+# rows_in_range_eyy = []
+# rows_in_range_exy = []
 
-for row_y, row_x, row_exx, row_eyy, row_exy in zip(Y_dic, X_dic, E_xx_dic, E_yy_dic, E_xy_dic):
-    for value in row_y:
-        if 25 <= value <= 85:
-            rows_in_range_y.append(row_y)
-            rows_in_range_x.append(row_x)
-            rows_in_range_exx.append(row_exx)
-            rows_in_range_eyy.append(row_eyy)
-            rows_in_range_exy.append(row_exy)
-            break
-Y_dic = np.array(rows_in_range_y)[::20, ::5]
-X_dic = np.array(rows_in_range_x)[::20, ::5]
-E_xx_dic = np.array(rows_in_range_exx)[::20, ::5]
-E_yy_dic = np.array(rows_in_range_eyy)[::20, ::5]
-E_xy_dic = np.array(rows_in_range_exy)[::20, ::5]
+# for row_y, row_x, row_exx, row_eyy, row_exy in zip(Y_dic, X_dic, E_xx_dic, E_yy_dic, E_xy_dic):
+#     for value in row_y:
+#         if 25 <= value <= 85:
+#             rows_in_range_y.append(row_y)
+#             rows_in_range_x.append(row_x)
+#             rows_in_range_exx.append(row_exx)
+#             rows_in_range_eyy.append(row_eyy)
+#             rows_in_range_exy.append(row_exy)
+#             break
+# Y_dic = np.array(rows_in_range_y)[::20, ::5]
+# X_dic = np.array(rows_in_range_x)[::20, ::5]
+# E_xx_dic = np.array(rows_in_range_exx)[::20, ::5]
+# E_yy_dic = np.array(rows_in_range_eyy)[::20, ::5]
+# E_xy_dic = np.array(rows_in_range_exy)[::20, ::5]
+
+Y_dic = Y_dic[::10, ::10]
+X_dic = X_dic[::10, ::10]
+E_xx_dic = E_xx_dic[::10, ::10]
+E_yy_dic = E_yy_dic[::10, ::10]
+E_xy_dic = E_xy_dic[::10, ::10]
 
 
 print(Y_dic.shape)

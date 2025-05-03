@@ -51,7 +51,7 @@ parser.add_argument('--optimizer', choices=['adam'], default='adam', help='Optim
 parser.add_argument('--mlp', choices=['mlp', 'modified_mlp'], default='mlp', help='Type of MLP for SPINN')
 parser.add_argument('--initialization', choices=['Glorot uniform', 'He normal'], default='Glorot uniform', help='Initialization method')
 
-parser.add_argument('--measurments_type', choices=['displacement','strain'], default='strain', help='Type of measurements')
+parser.add_argument('--measurments_type', choices=['displacement','strain'], default='displacement', help='Type of measurements')
 parser.add_argument('--num_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
 parser.add_argument('--noise_magnitude', type=float, default=1e-4, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
@@ -59,7 +59,7 @@ parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1],
 parser.add_argument('--coord_normalization', type=bool, default=False, help='Normalize the input coordinates')
 
 parser.add_argument('--FEM_dataset', type=str, default='fem_solution_dogbone_experiments_ROI.dat', help='Path to FEM data')
-parser.add_argument('--DIC_dataset_path', type=str, default='DIC_data', help='If default no_dataset, use FEM model for measurements -- (DIC_data or no_dataset)')
+parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements -- (DIC_data or no_dataset)')
 parser.add_argument('--DIC_dataset_number', type=int, default=1, help='Only for DIC simulated measurements')
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
 
@@ -113,8 +113,8 @@ x_max = [1.0, 1.0] if args.coord_normalization else x_max_full
 
 E_actual  = 69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
 nu_actual = 0.33     # Actual Poisson's ratio
-E_init    = 20e3   # Initial guess for Young's modulus
-nu_init   = 0.15     # Initial guess for Poisson's ratio
+E_init    = 200e3   # Initial guess for Young's modulus
+nu_init   = 0.60     # Initial guess for Poisson's ratio
 
 p_stress = 9 #FEM reference solution for 360N --> 360N/(2mmx20mm) = 9 MPa
 
@@ -245,13 +245,14 @@ elif args.measurments_type == "strain":
         X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
         X_dic = X_dic.dropna(axis=1)
         X_dic = X_dic.to_numpy()
-        X_dic += offs_x
+        X_dic += offs_x + 0.5
 
         Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
         Y_dic = Y_dic.replace({',': '.'}, regex=True)
         Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
         Y_dic = Y_dic.dropna(axis=1)
         Y_dic = Y_dic.to_numpy()
+        Y_dic += offs_y + 0.5
 
         Ux_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_U_trans.csv"), delimiter=";",dtype=str)
         Ux_dic = Ux_dic.replace({',': '.'}, regex=True)
@@ -312,21 +313,20 @@ elif args.measurments_type == "strain":
         # E_yy_dic = np.array(rows_in_range_eyy)
         # E_xy_dic = np.array(rows_in_range_exy)
 
-        Y_dic = Y_dic[::10, ::10]
-        X_dic = X_dic[::10, ::10]
-        Ux_dic = Ux_dic[::10, ::10]
-        Uy_dic = Uy_dic[::10, ::10]
-        E_xx_dic = E_xx_dic[::10, ::10]
-        E_yy_dic = E_yy_dic[::10, ::10]
-        E_xy_dic = E_xy_dic[::10, ::10]
+        print(Y_dic.shape)
+        Y_dic = Y_dic[::4, ::4]
+        X_dic = X_dic[::4, ::4]
+        Ux_dic = Ux_dic[::4, ::4]
+        Uy_dic = Uy_dic[::4, ::4]
+        E_xx_dic = E_xx_dic[::4, ::4]
+        E_yy_dic = E_yy_dic[::4, ::4]
+        E_xy_dic = E_xy_dic[::4, ::4]
 
 
         E_xx_dic = E_xx_dic.reshape(-1,1)
         E_yy_dic = E_yy_dic.reshape(-1,1)
         E_xy_dic = E_xy_dic.reshape(-1,1)
 
-        # X_dic += 5
-        Y_dic += 25
 
         x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
         y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)

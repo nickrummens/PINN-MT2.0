@@ -1,0 +1,64 @@
+{
+    "system": {
+        "OS": "Linux",
+        "Release": "5.15.167.4-microsoft-standard-WSL2"
+    },
+    "gpu": {
+        "GPU": "NVIDIA GeForce RTX 4080 SUPER",
+        "Total GPU Memory": "15.99 GB"
+    },
+    "execution": {
+        "n_iter": 24540,
+        "elapsed": 191.97369694709778,
+        "iter_per_sec": 127.8300120810951,
+        "backend": "jax"
+    },
+    "network": {
+        "net_width": 32,
+        "net_depth": 5,
+        "num_params": 17024,
+        "activation": "tanh",
+        "mlp_type": "mlp",
+        "optimizer": "adam",
+        "initializer": "Glorot uniform",
+        "batch_size": 10016,
+        "lr": 0.001,
+        "loss_weights": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+        ],
+        "params_iter_speed": [
+            1,
+            1
+        ],
+        "u_0": [
+            0.0002295984783340459,
+            0.013674080818354454
+        ],
+        "logged_fields": []
+    },
+    "problem": {
+        "L_max": 10.0,
+        "H_max": 60.0,
+        "E_actual": 69000.0,
+        "nu_actual": 0.33,
+        "E_init": 200000.0,
+        "nu_init": 0.6,
+        "E_final": 68200.67468,
+        "nu_final": 0.3320244027
+    },
+    "data": {
+        "num_measurments": 16,
+        "noise_magnitude": 0.0001,
+        "measurments_type": "displacement",
+        "DIC_dataset_path": "no_dataset",
+        "DIC_dataset_number": 1,
+        "FEM_dataset": "fem_solution_dogbone_experiments_ROI.dat"
+    }
+}

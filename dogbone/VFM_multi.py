@@ -48,7 +48,7 @@ nu_actual = 0.33     # Actual Poisson's ratio
 p_stress = 9 #360N/(20mmx2mm)
 
 n_DIC = 4
-noise_DIC = 1e-4
+noise_DIC = 1e-6
 
 def transform_coords(x):
     """

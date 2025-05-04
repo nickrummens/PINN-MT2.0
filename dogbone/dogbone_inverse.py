@@ -53,13 +53,13 @@ parser.add_argument('--initialization', choices=['Glorot uniform', 'He normal'],
 
 parser.add_argument('--measurments_type', choices=['displacement','strain'], default='displacement', help='Type of measurements')
 parser.add_argument('--num_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
-parser.add_argument('--noise_magnitude', type=float, default=1e-4, help='Gaussian noise magnitude (not for DIC simulated)')
+parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 parser.add_argument('--coord_normalization', type=bool, default=False, help='Normalize the input coordinates')
 
 parser.add_argument('--FEM_dataset', type=str, default='fem_solution_dogbone_experiments_ROI.dat', help='Path to FEM data')
-parser.add_argument('--DIC_dataset_path', type=str, default='no_dataset', help='If default no_dataset, use FEM model for measurements -- (DIC_data or no_dataset)')
+parser.add_argument('--DIC_dataset_path', type=str, default='DIC_data', help='If default no_dataset, use FEM model for measurements -- (DIC_data or no_dataset)')
 parser.add_argument('--DIC_dataset_number', type=int, default=1, help='Only for DIC simulated measurements')
 parser.add_argument('--results_path', type=str, default='results_inverse', help='Path to save results')
 
@@ -114,7 +114,7 @@ x_max = [1.0, 1.0] if args.coord_normalization else x_max_full
 E_actual  = 69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
 nu_actual = 0.33     # Actual Poisson's ratio
 E_init    = 200e3   # Initial guess for Young's modulus
-nu_init   = 0.60     # Initial guess for Poisson's ratio
+nu_init   = 0.60    # Initial guess for Poisson's ratio
 
 p_stress = 9 #FEM reference solution for 360N --> 360N/(2mmx20mm) = 9 MPa
 
@@ -199,16 +199,70 @@ args.num_measurments = int(np.sqrt(args.num_measurments))**2
 if args.measurments_type == "displacement":
     if args.DIC_dataset_path != "no_dataset":
         dic_path = os.path.join(dir_path, args.DIC_dataset_path)
-        dic_number = args.DIC_dataset_number
-        X_dic = pd.read_csv(os.path.join(dic_path, "x", f"x_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
-        Y_dic = pd.read_csv(os.path.join(dic_path, "y", f"y_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy()
-        Ux_dic = pd.read_csv(os.path.join(dic_path, "ux", f"ux_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        Uy_dic = pd.read_csv(os.path.join(dic_path, "uy", f"uy_{dic_number}.csv"), delimiter=";").dropna(axis=1).to_numpy().T.reshape(-1, 1)
-        DIC_data = np.hstack([Ux_dic, Uy_dic])
+        # SIMULATED DIC: speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv etc.
+        # REAL-WORLD DIC: Image_0020_0.tiff_X_trans.csv
+
+        X_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv"), delimiter=";",dtype=str)
+        X_dic = X_dic.replace({',': '.'}, regex=True)
+        X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
+        X_dic = X_dic.dropna(axis=1)
+        X_dic = X_dic.to_numpy()
+        X_dic += offs_x + 0.5
+
+        Y_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_Y_trans.csv"), delimiter=";",dtype=str)
+        Y_dic = Y_dic.replace({',': '.'}, regex=True)
+        Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
+        Y_dic = Y_dic.dropna(axis=1)
+        Y_dic = Y_dic.to_numpy()
+        #Y_dic += offs_y + 0.5
+        Y_dic += 0.75
+
+        Ux_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_U_trans.csv"), delimiter=";",dtype=str)
+        Ux_dic = Ux_dic.replace({',': '.'}, regex=True)
+        Ux_dic = Ux_dic.apply(pd.to_numeric, errors='coerce')
+        Ux_dic = Ux_dic.dropna(axis=1)
+        Ux_dic = Ux_dic.to_numpy()
+
+        Uy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_V_trans.csv"), delimiter=";",dtype=str)
+        Uy_dic = Uy_dic.replace({',': '.'}, regex=True)
+        Uy_dic = Uy_dic.apply(pd.to_numeric, errors='coerce')
+        Uy_dic = Uy_dic.dropna(axis=1)
+        Uy_dic = Uy_dic.to_numpy()
+
+        #---------------------- SIMULATED DIC: ROI FIX -------------------------
+        rows_in_range_y = []
+        rows_in_range_x = []
+        rows_in_range_ux = []
+        rows_in_range_uy = []
+
+        for row_y, row_x, row_ux, row_uy in zip(Y_dic, X_dic, Ux_dic, Uy_dic):
+            for value in row_y:
+                if 25 <= value <= 85:
+                    rows_in_range_y.append(row_y)
+                    rows_in_range_x.append(row_x)
+                    rows_in_range_ux.append(row_ux)
+                    rows_in_range_uy.append(row_uy)
+                    break
+        Y_dic = np.array(rows_in_range_y)
+        X_dic = np.array(rows_in_range_x)
+        Ux_dic = np.array(rows_in_range_ux)
+        Uy_dic = np.array(rows_in_range_uy)
+
+        print(Y_dic.shape)
+        # Y_dic = Y_dic[::16, ::5]
+        # X_dic = X_dic[::16, ::5]
+        # Ux_dic = Ux_dic[::16, ::5]
+        # Uy_dic = Uy_dic[::16, ::5]
+
+
+        Ux_dic = Ux_dic.reshape(-1,1)
+        Uy_dic = Uy_dic.reshape(-1,1)
+
+
         x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
         y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
         X_DIC_input = [x_values, y_values]
-        #DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
+        DIC_data = np.hstack([Ux_dic, Uy_dic])
         if args.num_measurments != x_values.shape[0] * y_values.shape[0]:
             print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
             args.num_measurments = x_values.shape[0] * y_values.shape[0]
@@ -240,87 +294,87 @@ elif args.measurments_type == "strain":
         # SIMULATED DIC: speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv etc.
         # REAL-WORLD DIC: Image_0020_0.tiff_X_trans.csv
 
-        X_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
+        X_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv"), delimiter=";",dtype=str)
         X_dic = X_dic.replace({',': '.'}, regex=True)
         X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
         X_dic = X_dic.dropna(axis=1)
         X_dic = X_dic.to_numpy()
         X_dic += offs_x + 0.5
 
-        Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
+        Y_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_Y_trans.csv"), delimiter=";",dtype=str)
         Y_dic = Y_dic.replace({',': '.'}, regex=True)
         Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
         Y_dic = Y_dic.dropna(axis=1)
         Y_dic = Y_dic.to_numpy()
-        Y_dic += offs_y + 0.5
+        #Y_dic += offs_y + 0.5
 
-        Ux_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_U_trans.csv"), delimiter=";",dtype=str)
+        Ux_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_U_trans.csv"), delimiter=";",dtype=str)
         Ux_dic = Ux_dic.replace({',': '.'}, regex=True)
         Ux_dic = Ux_dic.apply(pd.to_numeric, errors='coerce')
         Ux_dic = Ux_dic.dropna(axis=1)
         Ux_dic = Ux_dic.to_numpy()
 
-        Uy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_V_trans.csv"), delimiter=";",dtype=str)
+        Uy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_V_trans.csv"), delimiter=";",dtype=str)
         Uy_dic = Uy_dic.replace({',': '.'}, regex=True)
         Uy_dic = Uy_dic.apply(pd.to_numeric, errors='coerce')
         Uy_dic = Uy_dic.dropna(axis=1)
         Uy_dic = Uy_dic.to_numpy()
 
-        E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_exx.csv"), delimiter=";",dtype=str)
+        E_xx_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exx.csv"), delimiter=";",dtype=str)
         E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
         E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
         E_xx_dic = E_xx_dic.dropna(axis=1)
         E_xx_dic = E_xx_dic.to_numpy()
 
-        E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_eyy.csv"), delimiter=";",dtype=str)
+        E_yy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_eyy.csv"), delimiter=";",dtype=str)
         E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
         E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
         E_yy_dic = E_yy_dic.dropna(axis=1)
         E_yy_dic = E_yy_dic.to_numpy()
 
-        E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_exy.csv"), delimiter=";",dtype=str)
+        E_xy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exy.csv"), delimiter=";",dtype=str)
         E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
         E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
         E_xy_dic = E_xy_dic.dropna(axis=1)
         E_xy_dic = E_xy_dic.to_numpy()
 
 
-        # ---------------------- SIMULATED DIC: ROI FIX -------------------------
-        # rows_in_range_y = []
-        # rows_in_range_x = []
-        # rows_in_range_ux = []
-        # rows_in_range_uy = []
-        # rows_in_range_exx = []
-        # rows_in_range_eyy = []
-        # rows_in_range_exy = []
+        #---------------------- SIMULATED DIC: ROI FIX -------------------------
+        rows_in_range_y = []
+        rows_in_range_x = []
+        rows_in_range_ux = []
+        rows_in_range_uy = []
+        rows_in_range_exx = []
+        rows_in_range_eyy = []
+        rows_in_range_exy = []
 
-        # for row_y, row_x, row_ux, row_uy, row_exx, row_eyy, row_exy in zip(Y_dic, X_dic, Ux_dic, Uy_dic, E_xx_dic, E_yy_dic, E_xy_dic):
-        #     for value in row_y:
-        #         if 25 <= value <= 85:
-        #             rows_in_range_y.append(row_y)
-        #             rows_in_range_x.append(row_x)
-        #             rows_in_range_ux.append(row_ux)
-        #             rows_in_range_uy.append(row_uy)
-        #             rows_in_range_exx.append(row_exx)
-        #             rows_in_range_eyy.append(row_eyy)
-        #             rows_in_range_exy.append(row_exy)
-        #             break
-        # Y_dic = np.array(rows_in_range_y)
-        # X_dic = np.array(rows_in_range_x)
-        # Ux_dic = np.array(rows_in_range_ux)
-        # Uy_dic = np.array(rows_in_range_uy)
-        # E_xx_dic = np.array(rows_in_range_exx)
-        # E_yy_dic = np.array(rows_in_range_eyy)
-        # E_xy_dic = np.array(rows_in_range_exy)
+        for row_y, row_x, row_ux, row_uy, row_exx, row_eyy, row_exy in zip(Y_dic, X_dic, Ux_dic, Uy_dic, E_xx_dic, E_yy_dic, E_xy_dic):
+            for value in row_y:
+                if 25 <= value <= 85:
+                    rows_in_range_y.append(row_y)
+                    rows_in_range_x.append(row_x)
+                    rows_in_range_ux.append(row_ux)
+                    rows_in_range_uy.append(row_uy)
+                    rows_in_range_exx.append(row_exx)
+                    rows_in_range_eyy.append(row_eyy)
+                    rows_in_range_exy.append(row_exy)
+                    break
+        Y_dic = np.array(rows_in_range_y)
+        X_dic = np.array(rows_in_range_x)
+        Ux_dic = np.array(rows_in_range_ux)
+        Uy_dic = np.array(rows_in_range_uy)
+        E_xx_dic = np.array(rows_in_range_exx)
+        E_yy_dic = np.array(rows_in_range_eyy)
+        E_xy_dic = np.array(rows_in_range_exy)
 
         print(Y_dic.shape)
-        Y_dic = Y_dic[::4, ::4]
-        X_dic = X_dic[::4, ::4]
-        Ux_dic = Ux_dic[::4, ::4]
-        Uy_dic = Uy_dic[::4, ::4]
-        E_xx_dic = E_xx_dic[::4, ::4]
-        E_yy_dic = E_yy_dic[::4, ::4]
-        E_xy_dic = E_xy_dic[::4, ::4]
+        # Y_dic = Y_dic[::4, ::4]
+        # X_dic = X_dic[::4, ::4]
+        # Ux_dic = Ux_dic[::4, ::4]
+        # Uy_dic = Uy_dic[::4, ::4]
+        # E_xx_dic = E_xx_dic[::4, ::4]
+        # E_yy_dic = E_yy_dic[::4, ::4]
+        # E_xy_dic = E_xy_dic[::4, ::4]
 
 
         E_xx_dic = E_xx_dic.reshape(-1,1)

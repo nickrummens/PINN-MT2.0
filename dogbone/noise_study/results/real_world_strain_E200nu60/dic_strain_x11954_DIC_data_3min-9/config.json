@@ -1,0 +1,65 @@
+{
+    "system": {
+        "OS": "Linux",
+        "Release": "5.15.167.4-microsoft-standard-WSL2"
+    },
+    "gpu": {
+        "GPU": "NVIDIA GeForce RTX 4080 SUPER",
+        "Total GPU Memory": "15.99 GB"
+    },
+    "execution": {
+        "n_iter": 15925,
+        "elapsed": 190.28799557685852,
+        "iter_per_sec": 83.68893661275544,
+        "backend": "jax"
+    },
+    "network": {
+        "net_width": 32,
+        "net_depth": 5,
+        "num_params": 17024,
+        "activation": "tanh",
+        "mlp_type": "mlp",
+        "optimizer": "adam",
+        "initializer": "Glorot uniform",
+        "batch_size": 21954,
+        "lr": 0.001,
+        "loss_weights": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+        ],
+        "params_iter_speed": [
+            1,
+            1
+        ],
+        "u_0": [
+            0.003714129774544623,
+            0.003685277029075091
+        ],
+        "logged_fields": []
+    },
+    "problem": {
+        "L_max": 10.0,
+        "H_max": 60.0,
+        "E_actual": 132135.306,
+        "nu_actual": 0.312,
+        "E_init": 200000.0,
+        "nu_init": 0.6,
+        "E_final": 131144.37219999998,
+        "nu_final": 0.31122557390000005
+    },
+    "data": {
+        "num_measurments": 11881,
+        "noise_magnitude": 1e-06,
+        "measurments_type": "strain",
+        "DIC_dataset_path": "DIC_data",
+        "DIC_dataset_number": 1,
+        "FEM_dataset": "fem_solution_dogbone_experiments_ROI.dat"
+    }
+}

@@ -52,8 +52,8 @@ parser.add_argument('--mlp', choices=['mlp', 'modified_mlp'], default='mlp', hel
 parser.add_argument('--initialization', choices=['Glorot uniform', 'He normal'], default='Glorot uniform', help='Initialization method')
 
 parser.add_argument('--measurments_type', choices=['displacement','strain'], default='displacement', help='Type of measurements')
-parser.add_argument('--num_measurments', type=int, default=16, help='Number of measurements (should be a perfect square)')
-parser.add_argument('--noise_magnitude', type=float, default=1e-6, help='Gaussian noise magnitude (not for DIC simulated)')
+parser.add_argument('--num_measurments', type=int, default=16, help='Number of measurements (should be a perfect square -16)')
+parser.add_argument('--noise_magnitude', type=float, default=1e-5, help='Gaussian noise magnitude (not for DIC simulated)')
 parser.add_argument('--u_0', nargs='+', type=float, default=[0,0], help='Displacement scaling factor for Ux and Uy, default(=0) use measurements norm')
 parser.add_argument('--params_iter_speed', nargs='+', type=float, default=[1,1], help='Scale iteration step for each parameter')
 parser.add_argument('--coord_normalization', type=bool, default=False, help='Normalize the input coordinates')
@@ -78,11 +78,10 @@ dde.config.set_default_autodiff("forward")
 # =============================================================================
 # 3. Global Constants, Geometry, and Material Parameters
 # =============================================================================
+
 # /!\ Distances are in mm, forces in N, Young's modulus in N/mm^2
 L_max = 10.0 # dogbone clamp width
 H_max = 60.0
-
-
 R = 20
 theta = np.arccos(15/R)
 b = 10
@@ -103,20 +102,22 @@ offs_x = indent_x
 offs_y = indent_y + H_clamp + (L_c-L_u)/2
 x_max_ROI = b
 y_max_ROI = L_u
-
 offsets = [offs_x, offs_y]
 ROI = [b, L_u]
-
 x_max_full = [offs_x + x_max_ROI, offs_y + y_max_ROI]
 
+#coord normalization
 x_max = [1.0, 1.0] if args.coord_normalization else x_max_full
 
-E_actual  = 69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
-nu_actual = 0.33     # Actual Poisson's ratio
+#Material parameters
+E_actual  = 69e3  # Actual Young's modulus 210 GPa = 210e3 N/mm^2
+nu_actual = 0.33  #0.312   # Actual Poisson's ratio
 E_init    = 200e3   # Initial guess for Young's modulus
 nu_init   = 0.60    # Initial guess for Poisson's ratio
 
-p_stress = 9 #FEM reference solution for 360N --> 360N/(2mmx20mm) = 9 MPa
+#stress (FEM reference solution for 360N --> 360N/(2mmx20mm) = 9 MPa)
+# force 190N --> p_stress = 4.75
+p_stress = 9 #4.75 #9.375 #9
 
 # Create trainable scaling factors (one per parameter)
 params_factor = [dde.Variable(1 / s) for s in args.params_iter_speed]
@@ -135,7 +136,8 @@ stress_val = data[:, 7:10]
 solution_val = np.hstack((u_val, stress_val))
 
 n_mesh_points = [total_points_hor,total_points_vert]
-# full specimen
+
+# #full specimen
 # x_grid = np.linspace(0, x_max_FEM, 40)
 # y_grid = np.linspace(0, y_max_FEM, 140)
 
@@ -228,6 +230,7 @@ if args.measurments_type == "displacement":
         Uy_dic = Uy_dic.apply(pd.to_numeric, errors='coerce')
         Uy_dic = Uy_dic.dropna(axis=1)
         Uy_dic = Uy_dic.to_numpy()
+        Uy_dic = -Uy_dic
 
         #---------------------- SIMULATED DIC: ROI FIX -------------------------
         rows_in_range_y = []
@@ -249,35 +252,33 @@ if args.measurments_type == "displacement":
         Uy_dic = np.array(rows_in_range_uy)
 
         print(Y_dic.shape)
-        # Y_dic = Y_dic[::16, ::5]
-        # X_dic = X_dic[::16, ::5]
-        # Ux_dic = Ux_dic[::16, ::5]
-        # Uy_dic = Uy_dic[::16, ::5]
+        Y_dic = Y_dic[::5, ::2]
+        X_dic = X_dic[::5, ::2]
+        Ux_dic = Ux_dic[::5, ::2]
+        Uy_dic = Uy_dic[::5, ::2]
 
 
-        Ux_dic = Ux_dic.reshape(-1,1)
-        Uy_dic = Uy_dic.reshape(-1,1)
+        Ux_dic = Ux_dic.reshape(-1,1, order='F')
+        Uy_dic = Uy_dic.reshape(-1,1, order='F')
 
 
         x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
         y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
+        y_values = y_values[::-1]
         X_DIC_input = [x_values, y_values]
         DIC_data = np.hstack([Ux_dic, Uy_dic])
+        print(X_DIC_input)
+        print(DIC_data)
         if args.num_measurments != x_values.shape[0] * y_values.shape[0]:
             print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
             args.num_measurments = x_values.shape[0] * y_values.shape[0]
     else:
-        # X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
-        #        np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        # DIC_data = solution_fn(X_DIC_input)[:, :2]
-        # DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
         X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
                np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        # X_DIC_input_ref = [np.linspace(0, 20, args.num_measurments).reshape(-1, 1),
-        #        np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
         DIC_data = solution_fn(X_DIC_input)[:, :2]
-        DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
-
+        DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)*DIC_data
+        print(X_DIC_input)
+        print(DIC_data)
     DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss
     measure_Ux = dde.PointSetOperatorBC(X_DIC_input, DIC_data[:, 0:1]/DIC_norms[0],
                                           lambda x, f, x_np: f[0][:, 0:1]/DIC_norms[0])
@@ -294,45 +295,46 @@ elif args.measurments_type == "strain":
         # SIMULATED DIC: speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv etc.
         # REAL-WORLD DIC: Image_0020_0.tiff_X_trans.csv
 
-        X_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv"), delimiter=";",dtype=str)
+        X_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_X_trans.csv"), delimiter=";",dtype=str)
         X_dic = X_dic.replace({',': '.'}, regex=True)
         X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
         X_dic = X_dic.dropna(axis=1)
         X_dic = X_dic.to_numpy()
         X_dic += offs_x + 0.5
 
-        Y_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_Y_trans.csv"), delimiter=";",dtype=str)
+        Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_Y_trans.csv"), delimiter=";",dtype=str)
         Y_dic = Y_dic.replace({',': '.'}, regex=True)
         Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
         Y_dic = Y_dic.dropna(axis=1)
         Y_dic = Y_dic.to_numpy()
-        #Y_dic += offs_y + 0.5
+        # real world: 
+        Y_dic += offs_y + 0.5
 
-        Ux_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_U_trans.csv"), delimiter=";",dtype=str)
+        Ux_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_U_trans.csv"), delimiter=";",dtype=str)
         Ux_dic = Ux_dic.replace({',': '.'}, regex=True)
         Ux_dic = Ux_dic.apply(pd.to_numeric, errors='coerce')
         Ux_dic = Ux_dic.dropna(axis=1)
         Ux_dic = Ux_dic.to_numpy()
 
-        Uy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_V_trans.csv"), delimiter=";",dtype=str)
+        Uy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_V_trans.csv"), delimiter=";",dtype=str)
         Uy_dic = Uy_dic.replace({',': '.'}, regex=True)
         Uy_dic = Uy_dic.apply(pd.to_numeric, errors='coerce')
         Uy_dic = Uy_dic.dropna(axis=1)
         Uy_dic = Uy_dic.to_numpy()
 
-        E_xx_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exx.csv"), delimiter=";",dtype=str)
+        E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_exx.csv"), delimiter=";",dtype=str)
         E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
         E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
         E_xx_dic = E_xx_dic.dropna(axis=1)
         E_xx_dic = E_xx_dic.to_numpy()
 
-        E_yy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_eyy.csv"), delimiter=";",dtype=str)
+        E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_eyy.csv"), delimiter=";",dtype=str)
         E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
         E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
         E_yy_dic = E_yy_dic.dropna(axis=1)
         E_yy_dic = E_yy_dic.to_numpy()
 
-        E_xy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exy.csv"), delimiter=";",dtype=str)
+        E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0.tiff_exy.csv"), delimiter=";",dtype=str)
         E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
         E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
         E_xy_dic = E_xy_dic.dropna(axis=1)
@@ -390,14 +392,8 @@ elif args.measurments_type == "strain":
             print(f"For this DIC dataset, the number of measurements is fixed to {x_values.shape[0] * y_values.shape[0]}")
             args.num_measurments = x_values.shape[0] * y_values.shape[0]
     else:
-        # X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
-        #        np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        # DIC_data = strain_fn(X_DIC_input)
-        # DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
         X_DIC_input = [np.linspace(offs_x, offs_x + x_max_ROI, args.num_measurments).reshape(-1, 1),
                np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
-        # X_DIC_input_ref = [np.linspace(0, 20, args.num_measurments).reshape(-1, 1),
-        #        np.linspace(offs_y, offs_y + y_max_ROI, args.num_measurments).reshape(-1, 1)]
         DIC_data = strain_fn(X_DIC_input)
         DIC_data += np.random.normal(0, args.noise_magnitude, DIC_data.shape)
     DIC_norms = np.mean(np.abs(DIC_data), axis=0) # to normalize the loss

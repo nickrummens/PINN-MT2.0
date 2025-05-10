@@ -41,8 +41,8 @@ x_max_ROI = b
 y_max_ROI = L_u
 
 
-E_actual  = 69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
-nu_actual = 0.33     # Actual Poisson's ratio
+E_actual  = 132.1353e3 #69e3   # Actual Young's modulus 210 GPa = 210e3 N/mm^2
+nu_actual = 0.3120 # 0.33     # Actual Poisson's ratio
 
 
 p_stress = 9 #360N/(20mmx2mm)
@@ -60,9 +60,101 @@ def transform_coords(x):
 
 
 
+"""
+SIMULATED DATA
+"""
+# dir_path = os.path.dirname(os.path.realpath(__file__))
+# dic_path = os.path.join(dir_path, "DIC_data")
+
+# # SIMULATED DIC: speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv etc.
+# # REAL-WORLD DIC: Image_0020_0.tiff_X_trans.csv
+
+# X_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv"), delimiter=";",dtype=str)
+# X_dic = X_dic.replace({',': '.'}, regex=True)
+# X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
+# X_dic = X_dic.dropna(axis=1)
+# X_dic = X_dic.to_numpy()
+# X_dic += 5
+
+# Y_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_Y_trans.csv"), delimiter=";",dtype=str)
+# Y_dic = Y_dic.replace({',': '.'}, regex=True)
+# Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
+# Y_dic = Y_dic.dropna(axis=1)
+# Y_dic = Y_dic.to_numpy()
+# # #real world data:
+# # Y_dic += 25
+
+# E_xx_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exx.csv"), delimiter=";",dtype=str)
+# E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
+# E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
+# E_xx_dic = E_xx_dic.dropna(axis=1)
+# E_xx_dic = E_xx_dic.to_numpy()
+# # E_xx_dic = E_xx_dic.reshape(-1,1)
+
+
+# E_yy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_eyy.csv"), delimiter=";",dtype=str)
+# E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
+# E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
+# E_yy_dic = E_yy_dic.dropna(axis=1)
+# E_yy_dic = E_yy_dic.to_numpy()
+# # E_yy_dic = E_yy_dic.reshape(-1,1)
+
+
+# E_xy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exy.csv"), delimiter=";",dtype=str)
+# E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
+# E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
+# E_xy_dic = E_xy_dic.dropna(axis=1)
+# E_xy_dic = E_xy_dic.to_numpy()
+# # E_xy_dic = E_xy_dic.reshape(-1,1)
+
+# rows_in_range_y = []
+# rows_in_range_x = []
+# rows_in_range_exx = []
+# rows_in_range_eyy = []
+# rows_in_range_exy = []
+
+# for row_y, row_x, row_exx, row_eyy, row_exy in zip(Y_dic, X_dic, E_xx_dic, E_yy_dic, E_xy_dic):
+#     for value in row_y:
+#         if 25 <= value <= 85:
+#             rows_in_range_y.append(row_y)
+#             rows_in_range_x.append(row_x)
+#             rows_in_range_exx.append(row_exx)
+#             rows_in_range_eyy.append(row_eyy)
+#             rows_in_range_exy.append(row_exy)
+#             break
+# Y_dic = np.array(rows_in_range_y)
+# X_dic = np.array(rows_in_range_x)
+# E_xx_dic = np.array(rows_in_range_exx)
+# E_yy_dic = np.array(rows_in_range_eyy)
+# E_xy_dic = np.array(rows_in_range_exy)
+
+# # Y_dic = np.array(rows_in_range_y)[::20, ::5]
+# # X_dic = np.array(rows_in_range_x)[::20, ::5]
+# # E_xx_dic = np.array(rows_in_range_exx)[::20, ::5]
+# # E_yy_dic = np.array(rows_in_range_eyy)[::20, ::5]
+# # E_xy_dic = np.array(rows_in_range_exy)[::20, ::5]
+
+# # Y_dic = Y_dic[::10, ::10]
+# # X_dic = X_dic[::10, ::10]
+# # E_xx_dic = E_xx_dic[::10, ::10]
+# # E_yy_dic = E_yy_dic[::10, ::10]
+# # E_xy_dic = E_xy_dic[::10, ::10]
+
+
+# print(Y_dic.shape)
+
+# E_xx_dic = E_xx_dic.reshape(-1,1)
+# E_yy_dic = E_yy_dic.reshape(-1,1)
+# E_xy_dic = E_xy_dic.reshape(-1,1)
+
+# x_values = np.mean(X_dic, axis=0).reshape(-1, 1)
+# y_values = np.mean(Y_dic, axis=1).reshape(-1, 1)
+# X_DIC_input = [x_values, y_values]
+# DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
+
 
 """
-REAL DATA
+REAL WORLD DATA
 """
 dir_path = os.path.dirname(os.path.realpath(__file__))
 dic_path = os.path.join(dir_path, "DIC_data")
@@ -70,21 +162,22 @@ dic_path = os.path.join(dir_path, "DIC_data")
 # SIMULATED DIC: speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv etc.
 # REAL-WORLD DIC: Image_0020_0.tiff_X_trans.csv
 
-X_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_X_trans.csv"), delimiter=";",dtype=str)
+X_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0_corr.tiff_X_trans.csv"), delimiter=";",dtype=str)
 X_dic = X_dic.replace({',': '.'}, regex=True)
 X_dic = X_dic.apply(pd.to_numeric, errors='coerce')
 X_dic = X_dic.dropna(axis=1)
 X_dic = X_dic.to_numpy()
-X_dic += 5
+X_dic += 5.5
 
-Y_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_Y_trans.csv"), delimiter=";",dtype=str)
+Y_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0_corr.tiff_Y_trans.csv"), delimiter=";",dtype=str)
 Y_dic = Y_dic.replace({',': '.'}, regex=True)
 Y_dic = Y_dic.apply(pd.to_numeric, errors='coerce')
 Y_dic = Y_dic.dropna(axis=1)
 Y_dic = Y_dic.to_numpy()
-# Y_dic += 25
+#real world data:
+Y_dic += 25.5
 
-E_xx_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exx.csv"), delimiter=";",dtype=str)
+E_xx_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0_corr.tiff_exx.csv"), delimiter=";",dtype=str)
 E_xx_dic = E_xx_dic.replace({',': '.'}, regex=True)
 E_xx_dic = E_xx_dic.apply(pd.to_numeric, errors='coerce')
 E_xx_dic = E_xx_dic.dropna(axis=1)
@@ -92,7 +185,7 @@ E_xx_dic = E_xx_dic.to_numpy()
 # E_xx_dic = E_xx_dic.reshape(-1,1)
 
 
-E_yy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_eyy.csv"), delimiter=";",dtype=str)
+E_yy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0_corr.tiff_eyy.csv"), delimiter=";",dtype=str)
 E_yy_dic = E_yy_dic.replace({',': '.'}, regex=True)
 E_yy_dic = E_yy_dic.apply(pd.to_numeric, errors='coerce')
 E_yy_dic = E_yy_dic.dropna(axis=1)
@@ -100,7 +193,7 @@ E_yy_dic = E_yy_dic.to_numpy()
 # E_yy_dic = E_yy_dic.reshape(-1,1)
 
 
-E_xy_dic = pd.read_csv(os.path.join(dic_path, "speckle_pattern_Numerical_1_0.synthetic.tif_exy.csv"), delimiter=";",dtype=str)
+E_xy_dic = pd.read_csv(os.path.join(dic_path, "Image_0020_0_corr2.tiff_exy.csv"), delimiter=";",dtype=str)
 E_xy_dic = E_xy_dic.replace({',': '.'}, regex=True)
 E_xy_dic = E_xy_dic.apply(pd.to_numeric, errors='coerce')
 E_xy_dic = E_xy_dic.dropna(axis=1)
@@ -122,17 +215,23 @@ for row_y, row_x, row_exx, row_eyy, row_exy in zip(Y_dic, X_dic, E_xx_dic, E_yy_
             rows_in_range_eyy.append(row_eyy)
             rows_in_range_exy.append(row_exy)
             break
-Y_dic = np.array(rows_in_range_y)[::20, ::5]
-X_dic = np.array(rows_in_range_x)[::20, ::5]
-E_xx_dic = np.array(rows_in_range_exx)[::20, ::5]
-E_yy_dic = np.array(rows_in_range_eyy)[::20, ::5]
-E_xy_dic = np.array(rows_in_range_exy)[::20, ::5]
+Y_dic = np.array(rows_in_range_y)
+X_dic = np.array(rows_in_range_x)
+E_xx_dic = np.array(rows_in_range_exx)
+E_yy_dic = np.array(rows_in_range_eyy)
+E_xy_dic = np.array(rows_in_range_exy)
 
-Y_dic = Y_dic[::10, ::10]
-X_dic = X_dic[::10, ::10]
-E_xx_dic = E_xx_dic[::10, ::10]
-E_yy_dic = E_yy_dic[::10, ::10]
-E_xy_dic = E_xy_dic[::10, ::10]
+# Y_dic = np.array(rows_in_range_y)[::20, ::5]
+# X_dic = np.array(rows_in_range_x)[::20, ::5]
+# E_xx_dic = np.array(rows_in_range_exx)[::20, ::5]
+# E_yy_dic = np.array(rows_in_range_eyy)[::20, ::5]
+# E_xy_dic = np.array(rows_in_range_exy)[::20, ::5]
+
+# Y_dic = Y_dic[::10, ::10]
+# X_dic = X_dic[::10, ::10]
+# E_xx_dic = E_xx_dic[::10, ::10]
+# E_yy_dic = E_yy_dic[::10, ::10]
+# E_xy_dic = E_xy_dic[::10, ::10]
 
 
 print(Y_dic.shape)
@@ -147,7 +246,7 @@ X_DIC_input = [x_values, y_values]
 DIC_data = np.hstack([E_xx_dic, E_yy_dic, E_xy_dic])
 
 """
-SIMULATED DATA
+ARTIFICIAL DATA
 """
 
 # # Load data
@@ -212,8 +311,13 @@ Eps6 = Eps6.reshape(X1.shape) # *2? engineering strain
 
 
 # Constants
-#Simumated data
-F = 360 #MUST CORRESPOND TO PSTRESS FOR SIMULATED DATA!!!!! CHECK FEM FILE
+# #Simumated data
+# F = 360 #MUST CORRESPOND TO PSTRESS FOR SIMULATED DATA!!!!! CHECK FEM FILE
+
+#RW data
+#F = 375
+F = 190
+
 
 #DIC
 # F = 450 #image 25
@@ -223,11 +327,14 @@ w = 10
 h = 60
 Sd = h*w
 
-# print(np.mean(Eps1))
-# print(np.mean(Eps2))
-# print(np.mean(Eps6))
-# print(X1[:,-1])
-# print(X2[0,:])
+print("np.mean(Eps1)")
+print(np.mean(Eps1))
+print("np.mean(Eps2)")
+print(np.mean(Eps2))
+print("np.mean(Eps6)")
+print(np.mean(Eps6))
+print(X1[:,-1])
+print(X2[0,:])
 
 """CALCULATION"""
 # Calculation of the components of matrix A

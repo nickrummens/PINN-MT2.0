@@ -49,7 +49,7 @@ def flatten_args(args):
 #5 runs for displacement and strain without noise
 #args["DIC_dataset_path"] = f"2_noise_study/data_dic/{camera_resolution}/0noise"
 #args["DIC_dataset_number"] = 1 # 0 is reference image
-args["results_path"] = r"noise_study/results/simulated_displacement_BFSU350S5MC_E200nu60"
+args["results_path"] = r"noise_study/results/real_world_strain_E200nu60"
 # args["available_time"] = 3
 for run in range(10):
     if run == 0: # log all fields for the first run
